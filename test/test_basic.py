@@ -14,7 +14,4 @@ def test_one():
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, strategy) as executor:
         fut = executor.submit(add, 1, 2)
-        print(fut.result())
-
-if __name__ == "__main__":
-    test_one()
+        assert fut.result(timeout=30) == 3
