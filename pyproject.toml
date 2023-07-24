@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "caws"
+authors = [
+    {name = "Alok Kamatar", email = "alokvk2@uchicago.edu"},
+]
+description = "Carbon Aware Workflow Scheduling built on top of Globus Compute Service"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "BSD-3-Clause"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "globus-compute-sdk >= 0.2.1"
+]
+dynamic = ["version"]
+
+[tool.setuptools]
+packages = ["caws"]
