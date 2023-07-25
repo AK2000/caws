@@ -36,6 +36,9 @@ class CawsTaskInfo:
     caws_future: Future[Any] | None = None
     gc_future: Future[Any] | None = None
 
+    # TODO:
+    # resource_requirements:
+
     def _update_caws_future(self, fut):
         if fut.exception() is not None:
             self.caws_future.set_exception(fut.exception())

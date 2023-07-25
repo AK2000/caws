@@ -94,6 +94,13 @@ class Endpoint:
         #TODO
         pass
 
+    def predict_runtime(self, task):
+        #TODO
+        pass
+
+    def predict_cold_start(self):
+        pass
+
     def predict_energy(self, task):
         #TODO
         pass
