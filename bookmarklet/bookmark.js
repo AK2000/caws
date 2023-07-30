@@ -26,6 +26,7 @@
             var energyDiv = document.createElement('div');
             energyDiv.classList.add('caws');
             energyDiv.classList.add('col-lg');
+            energyDiv.classList.add('py-1');
 
             var energyRowDiv = document.createElement('div');
             energyRowDiv.classList.add('row');
