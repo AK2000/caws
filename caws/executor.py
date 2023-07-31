@@ -9,15 +9,12 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, 
 from threading import Thread, Lock, Event
 from collections import defaultdict
 
-from globus_compute_sdk import Client
-
+from caws.utils import client
 from caws.transfer import TransferManager
 from caws.strategy import Strategy
 from caws.task import CawsTaskInfo, TaskStatus, CawsTask, CawsFuture
-from caws.endpoint import Endpoint
+from caws.endpoint import Endpoint, EndpointState
 from caws.predictors.transfer_predictors import TransferPredictor
-
-client = Client()
 
 logger = logging.getLogger(__name__)
 ch = logging.StreamHandler()
@@ -132,7 +129,7 @@ class CawsExecutor(object):
             self.awaiting_transfer.put((task, endpoint))
         else:
             task.task_status = TaskStatus.EXECUTING
-            print("Submitting task to endpoint")
+            logger.info("Submitting task to endpoint")
             endpoint.submit(task)
 
 
@@ -169,13 +166,12 @@ class CawsExecutor(object):
 
         while not kill_event.is_set():
             for endpoint in self.endpoints:
-                endpoint.poll()
-
-            # Send backup tasks if needed
-            self._send_backups_if_needed()
+                state = endpoint.poll()
+                if state == EndpointState.DEAD:
+                    self._send_backup_tasks()
 
             # Sleep before checking statuses again
             time.sleep(5)
 
-    def _send_backups_if_needed(self):
+    def _send_backups_tasks(self):
         pass

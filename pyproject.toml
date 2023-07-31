@@ -15,7 +15,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "globus-compute-sdk >= 0.2.1"
+    "globus-compute-sdk >= 0.2.1",
+    "sqlalchemy",
+    "geoip2"
 ]
 dynamic = ["version"]
 

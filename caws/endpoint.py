@@ -4,16 +4,17 @@ import json
 import sqlalchemy
 from sqlalchemy import text
 import pandas as pd
+import os
+import datetime
+from importlib.resources import files
 
 from globus_compute_sdk import Executor
 
+from caws.utils import client
 from caws.task import CawsTaskInfo
 # from caws.predictors import RuntimePredictor, EnergyPredictor
-
-electricitymaps_url = "https://api-access.electricitymaps.com/free-tier/carbon-intensity/history?zone=US-MIDW-MISO"
-electricitymaps_headers = {
-    "auth-token": "<INCLUDE>"
-}
+electricitymaps_url = "https://api-access.electricitymaps.com/free-tier/carbon-intensity/history"
+geolite2_db = os.path.join(os.path.dirname(__file__), 'data', 'GeoLite2-City', 'GeoLite2-City.mmdb')
 
 class EndpointState(Enum):
     DEAD: int = 0
@@ -41,12 +42,13 @@ class Endpoint:
                  name, 
                  compute_id,
                  transfer_id,
-                 lat=None,
-                 lon=None,
                  state=EndpointState.COLD,
                  monitoring_avail: bool = False,
-                 monitor_url="postgresql://parsl:parsl@192.5.87.108/monitoring",
-                 model_file=None,
+                 monitor_url=None,
+                 monitor_carbon: bool = False,
+                 lat=None,
+                 lon=None,
+                 zone_id=None,
                  runtime_predictor=None,
                  queue_predictor=None,
                  energy_predictor=None):
@@ -57,19 +59,43 @@ class Endpoint:
         self.monitoring_avail = monitoring_avail
         self.monitor_url = monitor_url
         if self.monitoring_avail:
+            if self.monitor_url is None:
+                self.monitor_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
             self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url)
 
-        self.last_energy_timestamp = 0 # TODO: Change this to something more recent?
-        self.last_carbon_time = None
-
-        self.scheduled_tasks = []
-        self.running_tasks = []
+        self.last_energy_timestamp = None # TODO: Change this to something more recent?
+        self.last_carbon_timestamp = None
+        
+        self.scheduled_tasks = set()
+        self.running_tasks = set()
 
         self.runtime_predictor = runtime_predictor
         self.queue_predictor = queue_predictor
         self.energy_predictor = energy_predictor
 
+        # Fetch state and status
+        self.poll()
+        self.metadata = client.get_endpoint_metadata(self.compute_endpoint_id)
+
         self.gce = Executor(endpoint_id=self.compute_endpoint_id)
+
+        self.monitor_carbon = monitor_carbon
+        if self.monitor_carbon:
+            self.lat = lat
+            self.lon = lon
+            self.zone_id = zone_id
+
+            if self.lat is None or self.lon is None or self.zone_id is None:
+                # This is expensive. Should only have to do this once for all endpoints
+                # But need to figure out how to close connection afterward
+                import geoip2.database
+
+                with geoip2.database.Reader(geolite2_db) as reader:
+                    response = reader.city(self.metadata['ip_address'])
+                    self.lat = response.location.latitude
+                    self.lon = response.location.longitude
+
+                self.electricitymaps_header = { 'auth-token': os.environ["ELECTRICITY_MAPS_TOKEN"] }
 
     def collect_energy_use(self):
         if not self.monitoring_avail:
@@ -83,12 +109,34 @@ class Endpoint:
 
 
     def collect_carbon_intensity(self):
-        if not self.monitoring_avail:
+        if not self.monitor_carbon:
             return None
 
-        response = requests.get(electricitymaps_url, headers=electricitymaps_headers)
+        now = datetime.datetime.now()
+        if self.last_carbon_timestamp is not None and now - self.last_carbon_timestamp < datetime.datetime.day:
+            return self.latest_carbon_history
+
+        payload = {
+            "lat": self.lat,
+            "lon": self.lon,
+            "zone": self.zone_id
+        }
+        response = requests.get(electricitymaps_url, 
+                                params=payload,
+                                headers=self.electricitymaps_header)
         self.latest_carbon_history = json.loads(response.text)
+        for hour in self.latest_carbon_history["history"]:
+            hour["datetime"] = datetime.datetime.strptime(hour["datetime"],
+                                                          '%Y-%m-%dT%H:%M:%S.%fz')
+            hour["datetime"] = hour["datetime"]\
+                                .replace(tzinfo=datetime.timezone.utc)\
+                                .astimezone(None)\
+                                .replace(tzinfo=None)
+
+        self.last_carbon_timestamp = now
+
         #TODO: Deal with timezones in carbon history
+        return self.latest_carbon_history
 
     def predict_ETA(self, task):
         #TODO
@@ -112,8 +160,24 @@ class Endpoint:
         if self.state == EndpointState.COLD:
             self.state = EndpointState.WARMING
 
+        scheduled_tasks.discard(task.task_id)
+        task.endpoint = self
         task.gc_future = self.gce.submit_to_registered_function(task.function_id, task.task_args, task.task_kwargs)
         task.gc_future.add_done_callback(task._update_caws_future)
+        running_tasks.add(task.task_id)
         
-    def poll(self):
-        pass
+    def poll(self) -> EndpointState:
+        status = client.get_endpoint_status(self.compute_endpoint_id)
+
+        if status["status"] != "online":
+            self.state = EndpointState.DEAD
+
+        # Funcx idle workers/managers does not seem to be working
+        if status["details"]["active_managers"] >= 0 and self.state != EndpointState.WARM:
+            self.state = EndpointState.WARM
+        elif status["details"]["active_managers"] == 0 and self.state == EndpointState.WARM:
+            self.state = EndpointState.COLD
+        
+        self.status = status
+        return self.state
+

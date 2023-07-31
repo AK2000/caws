@@ -35,7 +35,7 @@ class Strategy(ABC):
         self.endpoints = {e.name: e for e in endpoints}
         self.transfer_predictor = transfer_predictor
 
-    def schedule(self, tasks: CawsTaskInfo) -> Tuple, List[tasks]:
+    def schedule(self, tasks: CawsTaskInfo) -> (Tuple, List[CawsTaskInfo]):
         """ Map tasks to endpoints, with the assumption that the endpoint will
         run the task ASAP once it is scheduled.
 

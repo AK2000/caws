@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from enum import Enum
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Sequence, Optional
+from typing import Any, Callable, Sequence, Optional, TYPE_CHECKING
 from concurrent.futures import Future
 from uuid import uuid4
 
 from globus_compute_sdk import Client
+
+from caws.utils import client
+
+if TYPE_CHECKING:
+    from caws.endpoint import Endpoint
 
 class TaskStatus(Enum):
     CREATED: int = 0
@@ -35,14 +40,19 @@ class CawsTaskInfo:
     timing: dict[str, int] = field(default_factory=dict)
     caws_future: Future[Any] | None = None
     gc_future: Future[Any] | None = None
+    endpoint: Endpoint | None = None
 
     # TODO:
     # resource_requirements:
 
     def _update_caws_future(self, fut):
+        self.endpoint.running_tasks.remove(task_id)
+
         if fut.exception() is not None:
+            self.task_status = TaskStatus.ERROR
             self.caws_future.set_exception(fut.exception())
         else:
+            self.task_status = TaskStatus.COMPLETED
             self.caws_future.set_result(fut.result())
 
 class CawsTask:
@@ -62,8 +72,6 @@ class CawsTask:
         return func(*args, **kwargs)
 
 def caws_task(function=None):
-    from caws.executor import client
-
     def decorator(func):
         return CawsTask(client, func)
 
