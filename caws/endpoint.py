@@ -2,12 +2,13 @@ from enum import Enum
 import requests
 import json
 import sqlalchemy
-from sqlalchemy import text
+from sqlalchemy import select, or_
 import pandas as pd
 import os
 import datetime
 from importlib.resources import files
 
+from parsl.monitoring.db_manager import Database as mdb
 from globus_compute_sdk import Executor
 
 from caws.utils import client
@@ -52,6 +53,7 @@ class Endpoint:
                  runtime_predictor=None,
                  queue_predictor=None,
                  energy_predictor=None):
+                 
         self.name = name
         self.compute_endpoint_id = compute_id
         self.transfer_endpoint_id = transfer_id
@@ -77,7 +79,10 @@ class Endpoint:
         self.poll()
         self.metadata = client.get_endpoint_metadata(self.compute_endpoint_id)
 
-        self.gce = Executor(endpoint_id=self.compute_endpoint_id)
+        self.gce = Executor(endpoint_id=self.compute_endpoint_id,
+                            monitoring=self.monitoring_avail, 
+                            monitor_resources=True,
+                            resource_monitoring_interval=1)
 
         self.monitor_carbon = monitor_carbon
         if self.monitor_carbon:
@@ -97,15 +102,25 @@ class Endpoint:
 
                 self.electricitymaps_header = { 'auth-token': os.environ["ELECTRICITY_MAPS_TOKEN"] }
 
-    def collect_energy_use(self):
+    def collect_monitoring_info(self):
         if not self.monitoring_avail:
             return None
 
         with self.monitoring_engine.begin() as connection:
-            result = connection.execute(text(f"SELECT hostname,end_time,total_energy FROM energy WHERE start_time >= {self.last_energy_timestamp}")).all()
-            df = pd.DataFrame(result)
-            self.last_energy_timestamp = df["end_time"].max()
-            return df
+            run_ids = list(connection.execute(select(mdb.Workflow.run_id).where(mdb.Workflow.workflow_name == self.compute_endpoint_id)).all())
+            task_run_ids_or = [mdb.Try.run_id == run_id[0] for run_id in run_ids]
+            tasks = connection.execute(select(mdb.Try).where(or_(*task_run_ids_or))).all()
+            task_df = pd.DataFrame(tasks)
+            resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
+            resources = connection.execute(select(mdb.Resource).where(or_(*resource_run_ids_or))).all()
+            resource_df = pd.DataFrame(resources)
+            energy_run_ids_or = [mdb.Energy.run_id == run_id[0] for run_id in run_ids]
+            energy = connection.execute(select(mdb.Energy).where(or_(*energy_run_ids_or))).all()
+            energy_df = pd.DataFrame(energy)
+
+        # TODO: Adapt this to online setting and avoid fetching the same data repeatedly
+
+        return task_df, resource_df, energy_df
 
 
     def collect_carbon_intensity(self):
