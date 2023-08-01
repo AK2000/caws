@@ -169,30 +169,30 @@ class Endpoint:
         pass
 
     def schedule(self, task):
-        scheduled_tasks.add(task.task_id)
+        self.scheduled_tasks.add(task.task_id)
         
     def submit(self, task):
         if self.state == EndpointState.COLD:
             self.state = EndpointState.WARMING
 
-        scheduled_tasks.discard(task.task_id)
+        self.scheduled_tasks.discard(task.task_id)
         task.endpoint = self
         task.gc_future = self.gce.submit_to_registered_function(task.function_id, task.task_args, task.task_kwargs)
-        task.gc_future.add_done_callback(task._update_caws_future)
-        running_tasks.add(task.task_id)
+        self.running_tasks.add(task.task_id)
+
+    def task_finished(self, task):
+        self.running_tasks.remove(task.task_id)
         
     def poll(self) -> EndpointState:
         status = client.get_endpoint_status(self.compute_endpoint_id)
+        self.status = status
 
         if status["status"] != "online":
             self.state = EndpointState.DEAD
-
-        # Funcx idle workers/managers does not seem to be working
-        if status["details"]["active_managers"] >= 0 and self.state != EndpointState.WARM:
+        elif status["details"]["active_managers"] >= 0 and self.state != EndpointState.WARM:
             self.state = EndpointState.WARM
         elif status["details"]["active_managers"] == 0 and self.state == EndpointState.WARM:
             self.state = EndpointState.COLD
-        
-        self.status = status
+
         return self.state
 

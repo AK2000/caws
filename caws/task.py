@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import IntEnum
 from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Sequence, Optional, TYPE_CHECKING
 from concurrent.futures import Future
 from uuid import uuid4
+from datetime import datetime
 
 from globus_compute_sdk import Client
+from globus_compute_sdk.sdk.asynchronous.compute_future import ComputeFuture
 
 from caws.utils import client
 
 if TYPE_CHECKING:
     from caws.endpoint import Endpoint
+    from caws.executor import CawsExecutor
 
-class TaskStatus(Enum):
+class TaskStatus(IntEnum):
     CREATED: int = 0
     WAITING_DEPENDENCIES: int = 1
     READY: int = 2
@@ -35,27 +38,16 @@ class CawsTaskInfo:
     task_args: Sequence[Any]
     task_kwargs: dict[str, Any]
     task_id: str
+    function_name: str
     task_status: TaskStatus = TaskStatus.CREATED
     transfer_id: int | None = None 
-    timing: dict[str, int] = field(default_factory=dict)
+    timing_info: dict[str, datetime.DateTime] = field(default_factory=dict)
     caws_future: Future[Any] | None = None
-    gc_future: Future[Any] | None = None
+    gc_future: ComputeFuture[Any] | None = None
     endpoint: Endpoint | None = None
 
-    # TODO:
-    # resource_requirements:
-
-    def _update_caws_future(self, fut):
-        self.endpoint.running_tasks.remove(task_id)
-
-        if fut.exception() is not None:
-            self.task_status = TaskStatus.ERROR
-            self.caws_future.set_exception(fut.exception())
-        else:
-            self.task_status = TaskStatus.COMPLETED
-            self.caws_future.set_result(fut.result())
-
 class CawsTask:
+    __name__: str
     function_id: str
     func: Callable | None
 
@@ -64,8 +56,12 @@ class CawsTask:
         if func is None and func_id is None:
             raise Exception
         
-        if func is not None:
+        if func_id is not None:
+            self.function_id = func_id
+            self.__name__ = function_id
+        else:
             self.func = func
+            self.__name__ = func.__name__
             self.function_id = client.register_function(func)
 
     def __call__(self, *args, **kwargs):
