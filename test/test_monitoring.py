@@ -1,5 +1,6 @@
 import pytest
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ def test_collection_funcx():
     # Check to make sure we can collect monitoring data
     # Probably want a test like this inside funcx as well
     # but I think it's good to include here too
-    with Executor(endpoint_id="27c10959-3ae1-4ce9-a20d-466e7bba293c", 
+    with Executor(endpoint_id="14d17201-7380-4af8-b4e0-192cb9805274", 
                   monitoring=True, 
                   monitor_resources=True,
                   resource_monitoring_interval=1) as gce:

@@ -34,7 +34,7 @@ class CawsFuture(Future):
 
 @dataclass
 class CawsTaskInfo:
-    function_id: str
+    func: Callable
     task_args: Sequence[Any]
     task_kwargs: dict[str, Any]
     task_id: str
@@ -45,33 +45,3 @@ class CawsTaskInfo:
     caws_future: Future[Any] | None = None
     gc_future: ComputeFuture[Any] | None = None
     endpoint: Endpoint | None = None
-
-class CawsTask:
-    __name__: str
-    function_id: str
-    func: Callable | None
-
-    def __init__(self, client: Client, func: Optional[Callable] = None, func_id:Optional[str] = None):
-        # TODO: Figure out container support
-        if func is None and func_id is None:
-            raise Exception
-        
-        if func_id is not None:
-            self.function_id = func_id
-            self.__name__ = function_id
-        else:
-            self.func = func
-            self.__name__ = func.__name__
-            self.function_id = client.register_function(func)
-
-    def __call__(self, *args, **kwargs):
-        return func(*args, **kwargs)
-
-def caws_task(function=None):
-    def decorator(func):
-        return CawsTask(client, func)
-
-    if function is not None:
-        return decorator(function)
-
-    return decorator

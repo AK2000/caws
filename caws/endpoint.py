@@ -81,8 +81,8 @@ class Endpoint:
 
         self.gce = Executor(endpoint_id=self.compute_endpoint_id,
                             monitoring=self.monitoring_avail, 
-                            monitor_resources=True,
-                            resource_monitoring_interval=1)
+                            monitor_resources=True if self.monitoring_avail else False,
+                            resource_monitoring_interval=0.5)
 
         self.monitor_carbon = monitor_carbon
         if self.monitor_carbon:
@@ -177,7 +177,7 @@ class Endpoint:
 
         self.scheduled_tasks.discard(task.task_id)
         task.endpoint = self
-        task.gc_future = self.gce.submit_to_registered_function(task.function_id, task.task_args, task.task_kwargs)
+        task.gc_future = self.gce.submit(task.func, *task.task_args, **task.task_kwargs)
         self.running_tasks.add(task.task_id)
 
     def task_finished(self, task):

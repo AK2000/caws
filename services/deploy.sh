@@ -18,7 +18,7 @@ yum install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-co
 systemctl start docker
 
 # Start Postgres and pgadmin
-docker-compose up -d
+docker compose up -d
 
 # Set firewall rules
 ufw allow 5432

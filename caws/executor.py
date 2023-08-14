@@ -14,7 +14,7 @@ from datetime import datetime
 from caws.utils import client
 from caws.transfer import TransferManager
 from caws.strategy import Strategy
-from caws.task import CawsTaskInfo, TaskStatus, CawsTask, CawsFuture
+from caws.task import CawsTaskInfo, TaskStatus, CawsFuture
 from caws.endpoint import Endpoint, EndpointState
 from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
@@ -94,12 +94,7 @@ class CawsExecutor(object):
     def submit(self, fn: Callable, *args, **kwargs):
 
         task_id = str(uuid.uuid4())
-        if isinstance(fn, CawsTask):
-            function_id = fn.function_id
-        else:
-            function_id = client.register_function(func)
-
-        task_info = CawsTaskInfo(function_id, args, kwargs, task_id, fn.__name__)
+        task_info = CawsTaskInfo(fn, args, kwargs, task_id, fn.__name__)
         task_info.caws_future = CawsFuture(task_info)
         task_info.timing_info["submit"] = datetime.now()
         self.caws_db.send_monitoring_message(task_info)
@@ -137,6 +132,8 @@ class CawsExecutor(object):
         if len(files) > 0:
             task.transfer_id = self._transfer_manger.transfer(files, endpoint.name,
                                                           task_id)
+
+            print("Scheduling task")
             endpoint.schedule(task)
             # Put in queue to monitor when transfer has completed
             self.awaiting_transfer.put((task, endpoint))
@@ -207,5 +204,5 @@ class CawsExecutor(object):
             # Sleep before checking statuses again
             time.sleep(5)
 
-    def _send_backups_tasks(self):
+    def _send_backup_tasks(self):
         pass
