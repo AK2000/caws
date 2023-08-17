@@ -26,8 +26,8 @@ def gemm(dim: int):
     return A @ B
 
 def test_multi():
-    # compute_endpoint_id = "14d17201-7380-4af8-b4e0-192cb9805274"
-    compute_endpoint_id = "ef86d1de-d421-4423-9c6f-09acbfabf5b6"
+    compute_endpoint_id = "14d17201-7380-4af8-b4e0-192cb9805274"
+    # compute_endpoint_id = "ef86d1de-d421-4423-9c6f-09acbfabf5b6"
     transfer_endpoint_id = "9032dd3a-e841-4687-a163-2720da731b5b"
 
     endpoints = [
@@ -41,6 +41,9 @@ def test_multi():
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
 
     with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_tasks.db") as executor:
+        # Give a chance for the manager to start all the workers
+        executor.submit(sleep, 10).result()
+
         # Submit iteration task
         futures = []
         for i in range(100):
