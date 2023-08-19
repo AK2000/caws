@@ -44,12 +44,13 @@ def test_one():
         assert fut.result() == 3
 
 def test_multi():
-    compute_endpoint_id = "14d17201-7380-4af8-b4e0-192cb9805274"
+    # compute_endpoint_id = "14d17201-7380-4af8-b4e0-192cb9805274"
+    compute_endpoint_id = "ef86d1de-d421-4423-9c6f-09acbfabf5b6"
     transfer_endpoint_id = "9032dd3a-e841-4687-a163-2720da731b5b"
 
     endpoints = [
         caws.Endpoint(
-            "theta-funcx-dev",
+            "midway-funcx-dev",
             compute_endpoint_id,
             transfer_endpoint_id,
             monitoring_avail=True,
@@ -57,14 +58,7 @@ def test_multi():
     ]
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
 
-    with caws.CawsExecutor(endpoints, strategy) as executor:
-        # Warm up endpoint
-        fut = executor.submit(sleep, 5)
-        fut.result()
-
-        # Capture some idle time
-        time.sleep(5)
-
+    with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_tasks.db") as executor:
         # Submit all tasks
         futures = []
         for i in range(100):

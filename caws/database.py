@@ -91,6 +91,7 @@ class CawsDatabase:
         funcx_task_id = Column(Text, nullable=True)
         func_name = Column(Text, nullable=False)
         endpoint_id = Column(Text, nullable=True)
+        endpoint_status = Column(Text, nullable=True)
         task_status = Column(Text, nullable=False)
         time_submit = Column(DateTime, nullable=False)
         time_scheduled = Column(DateTime, nullable=True)
@@ -137,6 +138,9 @@ class CawsDatabaseManager(metaclass=Singleton):
         msg["caws_task_id"] = task.task_id
         if task.gc_future is not None:
             msg["funcx_task_id"] = task.gc_future.task_id
+            msg["endpoint_id"] = task.endpoint.compute_endpoint_id
+            msg["endpoint_status"] = task.endpoint_status
+
         msg["func_name"] = task.function_name
         msg["task_status"] = task.task_status.name
         msg["time_submit"] = task.timing_info.get("submit")
@@ -147,7 +151,9 @@ class CawsDatabaseManager(metaclass=Singleton):
         self.msg_queue.put(msg)
 
     def _database_pushing_loop(self):
-        update_cols = ["funcx_task_id", "endpoint_id", "task_status", "time_scheduled", "time_began", "time_completed", "caws_task_id"]
+        update_cols = ["funcx_task_id", "endpoint_id", "endpoint_status", "task_status",
+                       "time_scheduled", "time_began", "time_completed", "caws_task_id"]
+
         while not (self._kill_event.is_set() and self.msg_queue.empty()):
             num_msgs = 0
             insert_messages = []

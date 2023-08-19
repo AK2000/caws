@@ -142,7 +142,9 @@ class CawsExecutor(object):
 
     def _start_task(self, task, endpoint):
         task.task_status = TaskStatus.EXECUTING
+        task.endpoint_status = endpoint.state
         task.timing_info["began"] = datetime.now()
+        
         logger.info("Submitting task to endpoint")
         endpoint.submit(task)
         self.caws_db.send_monitoring_message(task)

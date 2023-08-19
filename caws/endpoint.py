@@ -49,10 +49,7 @@ class Endpoint:
                  monitor_carbon: bool = False,
                  lat=None,
                  lon=None,
-                 zone_id=None,
-                 runtime_predictor=None,
-                 queue_predictor=None,
-                 energy_predictor=None):
+                 zone_id=None):
                  
         self.name = name
         self.compute_endpoint_id = compute_id
@@ -61,19 +58,18 @@ class Endpoint:
         self.monitoring_avail = monitoring_avail
         self.monitor_url = monitor_url
         if self.monitoring_avail:
-            if self.monitor_url is None:
-                self.monitor_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
-            self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url)
+            try:
+                if self.monitor_url is None:
+                    self.monitor_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
+                self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url)
+            else:
+                self.monitoring_avail = False
 
         self.last_energy_timestamp = None # TODO: Change this to something more recent?
         self.last_carbon_timestamp = None
         
         self.scheduled_tasks = set()
         self.running_tasks = set()
-
-        self.runtime_predictor = runtime_predictor
-        self.queue_predictor = queue_predictor
-        self.energy_predictor = energy_predictor
 
         # Fetch state and status
         self.poll()
@@ -102,21 +98,26 @@ class Endpoint:
 
                 self.electricitymaps_header = { 'auth-token': os.environ["ELECTRICITY_MAPS_TOKEN"] }
 
-    def collect_monitoring_info(self):
+    def collect_monitoring_info(self, prev_timestamp = None):
         if not self.monitoring_avail:
             return None
 
         with self.monitoring_engine.begin() as connection:
             run_ids = list(connection.execute(select(mdb.Workflow.run_id).where(mdb.Workflow.workflow_name == self.compute_endpoint_id)).all())
             task_run_ids_or = [mdb.Try.run_id == run_id[0] for run_id in run_ids]
-            tasks = connection.execute(select(mdb.Try).where(or_(*task_run_ids_or))).all()
-            task_df = pd.DataFrame(tasks)
+            task_df = pd.read_sql(select(mdb.Try).where(or_(*task_run_ids_or)))
+            end_times = pd.read_sql(f"SELECT task_id, timestamp FROM status WHERE (task_status_name='running_ended')", conn)
+            task_df = pd.merge(task_df, end_times, on="task_id")
+            task_df = task_df.rename(columns={"timestamp": "task_try_time_running_ended"})
+            task_df = task_df.set_index("task_id")
+            trys["task_try_time_running"] = pd.to_datetime(trys["task_try_time_running"])
+            trys["task_try_time_running_ended"] = pd.to_datetime(trys["task_try_time_running_ended"])
+
             resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
-            resources = connection.execute(select(mdb.Resource).where(or_(*resource_run_ids_or))).all()
-            resource_df = pd.DataFrame(resources)
+            resources_df = pd.read_sql(select(mdb.Resource).where(or_(*resource_run_ids_or)))
+
             energy_run_ids_or = [mdb.Energy.run_id == run_id[0] for run_id in run_ids]
-            energy = connection.execute(select(mdb.Energy).where(or_(*energy_run_ids_or))).all()
-            energy_df = pd.DataFrame(energy)
+            energy_df = pd.read_sql(select(mdb.Energy).where(or_(*energy_run_ids_or)))
 
         # TODO: Adapt this to online setting and avoid fetching the same data repeatedly
 
@@ -152,21 +153,6 @@ class Endpoint:
 
         #TODO: Deal with timezones in carbon history
         return self.latest_carbon_history
-
-    def predict_ETA(self, task):
-        #TODO
-        pass
-
-    def predict_runtime(self, task):
-        #TODO
-        pass
-
-    def predict_cold_start(self):
-        pass
-
-    def predict_energy(self, task):
-        #TODO
-        pass
 
     def schedule(self, task):
         self.scheduled_tasks.add(task.task_id)

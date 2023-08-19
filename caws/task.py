@@ -13,7 +13,7 @@ from globus_compute_sdk.sdk.asynchronous.compute_future import ComputeFuture
 from caws.utils import client
 
 if TYPE_CHECKING:
-    from caws.endpoint import Endpoint
+    from caws.endpoint import Endpoint, EndpointState
     from caws.executor import CawsExecutor
 
 class TaskStatus(IntEnum):
@@ -45,3 +45,4 @@ class CawsTaskInfo:
     caws_future: Future[Any] | None = None
     gc_future: ComputeFuture[Any] | None = None
     endpoint: Endpoint | None = None
+    endpoint_status = EndpointState | None = None
