@@ -16,45 +16,32 @@ ch.setFormatter(logging.Formatter(
     "[TRANSFER]  %(message)s", 'red'))
 logger.addHandler(ch)
 
-
-TOKEN_LOC = os.path.expanduser('~/.funcx/credentials/scheduler_tokens.json')
-CLIENT_ID = 'f06739da-ad7d-40bd-887f-abb1d23bbd6f'
-
-
 class TransferManager(object):
 
     # TODO: move TransferPredictor into this class and update prediction model
     # every time a tranfer finishes
 
     def __init__(self, endpoints, sync_level='exists', log_level='INFO'):
-        pass
+        self.transfer_client = globus_sdk.TransferClient() #TODO: implement authroizer
 
-        # transfer_scope = 'urn:globus:auth:scope:transfer.api.globus.org:all'
-        # native_client = NativeClient(client_id=CLIENT_ID,
-        #                              app_name="FuncX Continuum Scheduler",
-        #                              token_storage=JSONTokenStorage(TOKEN_LOC))
-        # native_client.login(requested_scopes=[transfer_scope], no_browser=True,
-        #                     no_local_server=True, refresh_tokens=True)
-        # all_authorizers = native_client.get_authorizers_by_scope(
-        #     requested_scopes=[transfer_scope])
-        # transfer_authorizer = all_authorizers[transfer_scope]
-        # self.transfer_client = globus_sdk.TransferClient(transfer_authorizer)
+        self.name_to_endpoints = {}
+        for endpoint in self.endpoints:
+            self.name_to_endpoints[endpoint.name] = endpoints
+        self.endpoints = endpoints
+        self.sync_level = sync_level
+        logger.setLevel(log_level)
 
-        # self.endpoints = endpoints
-        # self.sync_level = sync_level
-        # logger.setLevel(log_level)
-
-        # # Track pending transfers
-        # self._next = 0
-        # self.active_transfers = {}
-        # self.completed_transfers = {}
-        # self.transfer_ids = {}
+        # Track pending transfers
+        self._next = 0
+        self.active_transfers = {}
+        self.completed_transfers = {}
+        self.transfer_ids = {}
 
         # # Initialize thread to wait on transfers
-        # self._polling_interval = 1
-        # self._tracker = Thread(target=self._track_transfers)
-        # self._tracker.daemon = True
-        # self._tracker.start()
+        self._polling_interval = 1
+        self._tracker = Thread(target=self._track_transfers)
+        self._tracker.daemon = True
+        self._tracker.start()
 
     def transfer(self, files_by_src, dst, task_id='', unique_name=False):
         n = len(files_by_src)
@@ -62,11 +49,11 @@ class TransferManager(object):
         empty_transfer = True
 
         transfer_ids = []
-        for i, (src, pairs) in enumerate(files_by_src.items(), 1):
-            src_name = endpoint_name(src)
-            dst_name = endpoint_name(dst)
+        for i, (src_name, pairs) in enumerate(files_by_src.items(), 1):
+            src = self.name_to_endpoints[src_name]
+            dst_name = dst.name
 
-            if src == dst:
+            if src.transfer_endpoint_id == dst.transfer_endpoint_id:
                 logger.debug(f'Skipped transfer from {src_name} to {dst_name}')
                 continue
             else:
@@ -75,11 +62,9 @@ class TransferManager(object):
             files, _ = zip(*pairs)
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
 
-            src_globus = self.endpoints[src]['globus']
-            dst_globus = self.endpoints[dst]['globus']
-
             tdata = globus_sdk.TransferData(self.transfer_client,
-                                            src_globus, dst_globus,
+                                            src.transfer_endpoint_id,
+                                            dst.transfer_endpoint_id,
                                             label='FuncX Transfer {} - {} of {}'
                                             .format(self._next + 1, i, n),
                                             sync_level=self.sync_level)
@@ -121,7 +106,6 @@ class TransferManager(object):
 
     def is_complete(self, num):
         assert(num <= self._next)
-
         return all(t in self.completed_transfers
                    for t in self.transfer_ids[num])
 

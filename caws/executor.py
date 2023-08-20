@@ -130,8 +130,13 @@ class CawsExecutor(object):
 
         # Start Globus transfer of required files, if any
         if len(files) > 0:
-            task.transfer_id = self._transfer_manger.transfer(files, endpoint.name,
-                                                          task_id)
+            transfer_id = self._transfer_manger.transfer(files, endpoint.name,
+                                                         task.task_id)
+            if transfer_id:
+                task.transfer_id = transfer_id
+            else:
+                # Empty Transfer
+                self._start_task(task, endpoint)
 
             print("Scheduling task")
             endpoint.schedule(task)
