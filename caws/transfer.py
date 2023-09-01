@@ -2,11 +2,15 @@ import os
 import uuid
 import time
 import logging
-from threading import Thread
+import threading
+from threading import Thread, Event
 import json
 import numpy as np
 from queue import Queue
+from enum import IntEnum
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Callable
 
 import globus_sdk
 
@@ -16,14 +20,28 @@ ch.setFormatter(logging.Formatter(
     "[TRANSFER]  %(message)s", 'red'))
 logger.addHandler(ch)
 
+class TransferStatus(IntEnum):
+    CREATING: int = 0
+    PENDING: int = 1
+    EXECUTING: int = 2
+    COMPLETED: int = 3
+    ERROR: int = 4
+
+@dataclass
+class TransferRecord:
+    task_id: int
+    transfer_ids: list[str]
+    remaining: int
+    status: TransferStatus
+    callback: None | Callable = None
+    fail_callback: None | Callable = None
+    callback_thread: None | int = None
+    error: int | None = None
+
 class TransferManager(object):
-
-    # TODO: move TransferPredictor into this class and update prediction model
-    # every time a tranfer finishes
-
     def __init__(self, endpoints, sync_level='exists', log_level='INFO'):
-        self.transfer_client = globus_sdk.TransferClient() #TODO: implement authroizer
-
+        self.transfer_client = globus_sdk.TransferClient() #TODO: implement authorizer
+        self.endpoints = endpoints
         self.name_to_endpoints = {}
         for endpoint in self.endpoints:
             self.name_to_endpoints[endpoint.name] = endpoints
@@ -35,20 +53,43 @@ class TransferManager(object):
         self._next = 0
         self.active_transfers = {}
         self.completed_transfers = {}
-        self.transfer_ids = {}
+        self.transfers_to_tasks = {}
+        self.task_records = {}
 
-        # # Initialize thread to wait on transfers
         self._polling_interval = 1
+        self._started = False
+
+    def start(self):
+        if self.started:
+            return
+
+        self.started = True
+        self._terminate_event = Event()
+
+        # Initialize thread to wait on transfers
         self._tracker = Thread(target=self._track_transfers)
         self._tracker.daemon = True
         self._tracker.start()
+    
+    def shutdown(self):
+        if not self.started:
+            return
+        
+        self._terminate_event.set()
 
-    def transfer(self, files_by_src, dst, task_id='', unique_name=False):
+    def transfer(self, 
+                 files_by_src, 
+                 dst, 
+                 task_id='', 
+                 unique_name=False,
+                 callback=None,
+                 failed_callback=None):
+
+        task_record = TransferRecord(self._next, [], 0, TransferStatus.CREATING, callback, fail_callback)
+        self.task_records[task_record.task_id] = task_record 
+        self._next += 1 #TODO: Do I need to worry about thread safety here?
+
         n = len(files_by_src)
-
-        empty_transfer = True
-
-        transfer_ids = []
         for i, (src_name, pairs) in enumerate(files_by_src.items(), 1):
             src = self.name_to_endpoints[src_name]
             dst_name = dst.name
@@ -56,8 +97,6 @@ class TransferManager(object):
             if src.transfer_endpoint_id == dst.transfer_endpoint_id:
                 logger.debug(f'Skipped transfer from {src_name} to {dst_name}')
                 continue
-            else:
-                empty_transfer = False
 
             files, _ = zip(*pairs)
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
@@ -84,6 +123,7 @@ class TransferManager(object):
             if res['code'] != 'Accepted':
                 raise ValueError('Transfer not accepted')
 
+            task_record.remaining += 1
             self.active_transfers[res['task_id']] = {
                 'src': src_globus,
                 'dst': dst_globus,
@@ -91,41 +131,28 @@ class TransferManager(object):
                 'name': f'{task_id} ({i}/{n})',
                 'submission_time': time.time()
             }
-            transfer_ids.append(res['task_id'])
-
-            if len(self.active_transfers) > MAX_CONCURRENT_TRANSFERS:
-                logger.warn('More than {} concurrent transfers! Expect delays.'
-                            .format(MAX_CONCURRENT_TRANSFERS))
-
-        if empty_transfer:
-            return None
+            task_record.transfer_ids.append(res['task_id'])
+        
+        task_record.status = PENDING
+        if task_record.remaining == 0:
+            if not task_record.error:
+                task_record.callback()
+                task_record.status = TransferStatus.COMPLETED
+            else:
+                task_record.failed_callback()
+                task_record.status = TransferStatus.FAILED
         else:
-            self._next += 1
-            self.transfer_ids[self._next] = transfer_ids
-            return self._next
+            task_record.status = TransferStatus.EXECUTING
+            
+        return task_record
+        
 
-    def is_complete(self, num):
-        assert(num <= self._next)
-        return all(t in self.completed_transfers
-                   for t in self.transfer_ids[num])
-
-    def get_transfer_time(self, num):
-        if not self.is_complete(num):
-            raise ValueError('Cannot get transfer time of incomplete transfer')
-
-        return max(self.completed_transfers[t]['time_taken']
-                   for t in self.transfer_ids[num])
-
-    def wait(self, num):
-        while not self.is_complete(num):
-            pass
 
     def _track_transfers(self):
         logger.info('Started transfer tracking thread')
 
-        while True:
-            time.sleep(self._polling_interval)
-
+        next_send = time.time() + self._polling_interval
+        while not self._terminate_event.is_set():
             for transfer_id, info in list(self.active_transfers.items()):
                 name = info['name']
                 status = self.transfer_client.get_task(transfer_id)
@@ -148,3 +175,6 @@ class TransferManager(object):
                                 .format(name, info['time_taken']))
                     self.completed_transfers[transfer_id] = info
                     del self.active_transfers[transfer_id]
+
+        self._terminate_event.wait(max(0, next_send - time.time()))
+        next_send += self._polling_interval

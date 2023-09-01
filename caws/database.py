@@ -139,7 +139,7 @@ class CawsDatabaseManager(metaclass=Singleton):
         if task.gc_future is not None:
             msg["funcx_task_id"] = task.gc_future.task_id
             msg["endpoint_id"] = task.endpoint.compute_endpoint_id
-            msg["endpoint_status"] = task.endpoint_status
+            msg["endpoint_status"] = task.endpoint_status.name
 
         msg["func_name"] = task.function_name
         msg["task_status"] = task.task_status.name

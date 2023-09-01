@@ -45,4 +45,4 @@ class CawsTaskInfo:
     caws_future: Future[Any] | None = None
     gc_future: ComputeFuture[Any] | None = None
     endpoint: Endpoint | None = None
-    endpoint_status = EndpointState | None = None
+    endpoint_status: EndpointState | None = None

@@ -62,8 +62,10 @@ class Endpoint:
                 if self.monitor_url is None:
                     self.monitor_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
                 self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url)
-            else:
+            except:
                 self.monitoring_avail = False
+        else:
+            self.monitoring_avail = False
 
         self.last_energy_timestamp = None # TODO: Change this to something more recent?
         self.last_carbon_timestamp = None
