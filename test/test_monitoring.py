@@ -7,17 +7,19 @@ logger = logging.getLogger(__name__)
 from globus_compute_sdk import Executor
 
 import caws
+from utils import mainify
 
 def add(a: int, b: int):
     import time
-    time.sleep(3)
+    time.sleep(3) # wait overly long to ensure a resource message has been captured
     return a + b
+add = mainify(add)
 
-def test_collection_funcx():
+def test_collection_funcx(endpoint_id):
     # Check to make sure we can collect monitoring data
     # Probably want a test like this inside funcx as well
     # but I think it's good to include here too
-    with Executor(endpoint_id="14d17201-7380-4af8-b4e0-192cb9805274", 
+    with Executor(endpoint_id=endpoint_id, 
                   monitoring=True, 
                   monitor_resources=True,
                   resource_monitoring_interval=1) as gce:
@@ -61,13 +63,9 @@ def test_collection_funcx():
 
     logger.info("all done")
 
-def test_collection_endpoint():
-    compute_endpoint_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
-    transfer_endpoint_id = "9032dd3a-e841-4687-a163-2720da731b5b"
-
-    endpoint = caws.Endpoint("wsl-funcx-dev", 
-                             compute_endpoint_id,
-                             transfer_endpoint_id,
+def test_collection_endpoint(endpoint_id):
+    endpoint = caws.Endpoint("caws-dev", 
+                             endpoint_id,
                              monitoring_avail=True)
 
     task_df, resource_df, energy_df = endpoint.collect_monitoring_info()

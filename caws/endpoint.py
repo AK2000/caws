@@ -42,7 +42,7 @@ class Endpoint:
     def __init__(self, 
                  name, 
                  compute_id,
-                 transfer_id,
+                 transfer_id=None,
                  state=EndpointState.COLD,
                  monitoring_avail: bool = False,
                  monitor_url=None,

@@ -5,13 +5,17 @@ import caws
 from caws.strategy import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
 
+from utils import mainify
+
 def add(a: int, b: int):
     return a + b
+add = mainify(add)
 
 def sleep(sec: float):
     import time
     time.sleep(sec)
     return True
+sleep = mainify(sleep)
 
 def compute_iters(a: int):
     result = 0
@@ -19,6 +23,7 @@ def compute_iters(a: int):
         result += i
 
     return result
+compute_iters = mainify(compute_iters)
 
 def gemm(dim: int):
     import numpy as np
@@ -27,14 +32,11 @@ def gemm(dim: int):
     B = np.random.rand(dim, dim)
 
     return A @ B
+gemm = mainify(gemm)
 
-def test_one():
-    compute_endpoint_id = "14d17201-7380-4af8-b4e0-192cb9805274"
-    transfer_endpoint_id = "9032dd3a-e841-4687-a163-2720da731b5b"
-
-    endpoint = caws.Endpoint("wsl-funcx-dev", 
-                             compute_endpoint_id,
-                             transfer_endpoint_id,
+def test_one(endpoint_id):
+    endpoint = caws.Endpoint("caws-dev", 
+                             endpoint_id,
                              monitoring_avail=True)
 
     endpoints = [endpoint]
@@ -43,16 +45,12 @@ def test_one():
         fut = executor.submit(add, 1, 2)
         assert fut.result() == 3
 
-def test_multi():
-    # compute_endpoint_id = "14d17201-7380-4af8-b4e0-192cb9805274"
-    compute_endpoint_id = "ef86d1de-d421-4423-9c6f-09acbfabf5b6"
-    transfer_endpoint_id = "9032dd3a-e841-4687-a163-2720da731b5b"
+def test_multi(endpoint_id):
 
     endpoints = [
         caws.Endpoint(
-            "midway-funcx-dev",
-            compute_endpoint_id,
-            transfer_endpoint_id,
+            "caws-dev",
+            endpoint_id,
             monitoring_avail=True,
         ),
     ]
@@ -69,6 +67,3 @@ def test_multi():
             futures.append(executor.submit(gemm, 256))
 
         concurrent.futures.wait(futures)
-
-if __name__ == "__main__":
-    test_multi()

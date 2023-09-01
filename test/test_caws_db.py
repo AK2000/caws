@@ -7,9 +7,11 @@ from caws.database import CawsDatabase, CawsDatabaseManager
 from caws.task import CawsTaskInfo
 from caws.strategy import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
+from utils import mainify
 
 def add(a: int, b: int):
     return a + b
+add = mainify(add)
 
 def test_database_create():
     import sqlalchemy
@@ -52,9 +54,6 @@ def test_db_manager():
         result = connection.execute(text("SELECT COUNT(*) FROM caws_task"))
         (c, ) = result.first()
         assert c == 1
-
-def add(a, b):
-    return a + b
 
 def test_integration():
     import sqlalchemy
