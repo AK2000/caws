@@ -1,11 +1,7 @@
 import pytest
 
 from globus_compute_sdk import Executor
-from utils import mainify
-
-def add(a: int, b: int):
-    return a + b
-add = mainify(add)
+from util_funcs import add
 
 def test_funcx(endpoint_id):
     # Check to make sure regular functionality of funcx and the endpoint
@@ -13,6 +9,3 @@ def test_funcx(endpoint_id):
     with Executor(endpoint_id=endpoint_id) as gce:
         future = gce.submit(add, 10, 5)
         assert future.result() == 15
-
-if __name__ == "__main__":
-    test_funcx()

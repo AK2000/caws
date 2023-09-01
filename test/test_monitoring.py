@@ -7,13 +7,7 @@ logger = logging.getLogger(__name__)
 from globus_compute_sdk import Executor
 
 import caws
-from utils import mainify
-
-def add(a: int, b: int):
-    import time
-    time.sleep(3) # wait overly long to ensure a resource message has been captured
-    return a + b
-add = mainify(add)
+from utils import sleep
 
 def test_collection_funcx(endpoint_id):
     # Check to make sure we can collect monitoring data
@@ -24,8 +18,8 @@ def test_collection_funcx(endpoint_id):
                   monitor_resources=True,
                   resource_monitoring_interval=1) as gce:
 
-        future = gce.submit(add, 10, 5)
-        assert future.result() == 15
+        future = gce.submit(sleep, 5)
+        future.result()
 
     import sqlalchemy
     from sqlalchemy import text
@@ -73,6 +67,3 @@ def test_collection_endpoint(endpoint_id):
     assert len(task_df) >= 0
     assert len(resource_df) >= 0
     assert len(energy_df) >= 0
-
-if __name__ == "__main__":
-    test_collection_endpoint()

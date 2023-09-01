@@ -7,11 +7,7 @@ from caws.database import CawsDatabase, CawsDatabaseManager
 from caws.task import CawsTaskInfo
 from caws.strategy import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
-from utils import mainify
-
-def add(a: int, b: int):
-    return a + b
-add = mainify(add)
+from util_funcs import add
 
 def test_database_create():
     import sqlalchemy
@@ -55,19 +51,15 @@ def test_db_manager():
         (c, ) = result.first()
         assert c == 1
 
-def test_integration():
+def test_integration(endpoint_id):
     import sqlalchemy
     from sqlalchemy import text
 
     if os.path.exists("caws_monitoring.db"):
         os.remove("caws_monitoring.db")
 
-    compute_endpoint_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
-    transfer_endpoint_id = "9032dd3a-e841-4687-a163-2720da731b5b"
-
-    endpoint = caws.Endpoint("wsl-funcx-dev", 
-                             compute_endpoint_id,
-                             transfer_endpoint_id,
+    endpoint = caws.Endpoint("caws-dev", 
+                             endpoint_id,
                              monitoring_avail=False)
 
     endpoints = [endpoint]
@@ -81,9 +73,6 @@ def test_integration():
         result = connection.execute(text("SELECT COUNT(*) FROM caws_task"))
         (c, ) = result.first()
         assert c >= 0
-
-if __name__ == "__main__":
-    test_integration()
 
     
 
