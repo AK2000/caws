@@ -39,7 +39,6 @@ class CawsExecutor(object):
 
     ready_tasks_lock = Lock()
     ready_tasks: list[CawsTaskInfo] = []
-    awaiting_transfer: Queue[CawsTaskInfo] = Queue()
 
     def __init__(self, 
                  endpoints: list[Endpoint],
@@ -51,7 +50,7 @@ class CawsExecutor(object):
         
         self.endpoints = endpoints
         self.strategy = strategy
-        self._transfer_manger = TransferManager(endpoints)
+        self._transfer_manager = TransferManager(endpoints, log_level=logging.DEBUG)
 
         self._task_watchdog_sleep = task_watchdog_sleep
         self._endpoint_watchdog_sleep = endpoint_watchdog_sleep
@@ -73,26 +72,24 @@ class CawsExecutor(object):
     def start(self):
         print("Executor starting")
         self.caws_db.start()
+        self._transfer_manager.start()
 
         self._kill_event = Event()
         self._task_scheduler = Thread(target=self._schedule_tasks_loop, args=(self._kill_event,))
         self._task_scheduler.start()
 
-        self._task_watchdog = Thread(target=self._monitor_tasks, args=(self._kill_event,))
-        self._task_watchdog.start()
-
         self._endpoint_watchdog = Thread(target=self._check_endpoints, args=(self._kill_event,))
         self._endpoint_watchdog.start()
 
     def shutdown(self):
+        print("Executor shutting down")
         self._kill_event.set()
         self._task_scheduler.join()
-        self._task_watchdog.join()
         self._endpoint_watchdog.join()
+        self._transfer_manager.shutdown()
         self.caws_db.shutdown()
 
     def submit(self, fn: Callable, *args, **kwargs):
-
         task_id = str(uuid.uuid4())
         task_info = CawsTaskInfo(fn, args, kwargs, task_id, fn.__name__)
         task_info.caws_future = CawsFuture(task_info)
@@ -105,7 +102,7 @@ class CawsExecutor(object):
         return task_info.caws_future
 
     def _schedule_tasks_loop(self, kill_event):
-        logger.info("Starting task-submission thread")
+        print("Starting task-submission thread")
 
         self.tasks_scheduling = []
         while not kill_event.is_set():
@@ -116,33 +113,33 @@ class CawsExecutor(object):
             scheduling_decisions, self.tasks_scheduling = self.strategy.schedule(self.tasks_scheduling)
 
             for task, endpoint in scheduling_decisions:
-                self._start_task(task, endpoint)
+                print("Scheduling tasks")
+                self._schedule_task(task, endpoint)
 
             if len(scheduling_decisions) == 0:
                 time.sleep(self._task_scheduling_sleep)
 
     def _schedule_task(self, task, endpoint):
+        print("In scheduled task")
         task.task_status = TaskStatus.SCHEDULED
         task.timing_info["scheduled"] = datetime.now()
-        self.caws_db.send_monitoring_message(task_info)
+        print("Submitting message to db")
+        # self.caws_db.send_monitoring_message(task_info)
 
-        files = task.task_kwargs.get("_globus_files", {}) # Must be dict of {src: path_str}
+        print("Reading files")
+        files = task.task_kwargs.get("_globus_files", {}) # Must be dict of {src: [<paths>]}
+        print(files)
 
         # Start Globus transfer of required files, if any
         if len(files) > 0:
-            transfer_id = self._transfer_manger.transfer(files, endpoint.name,
-                                                         task.task_id)
-            if transfer_id:
-                task.transfer_id = transfer_id
-            else:
-                # Empty Transfer
-                self._start_task(task, endpoint)
-
-            print("Scheduling task")
+            print(f"Starting file transfers for task {task.task_id}")
+            task.transfer_record = self._transfer_manager.transfer(files, 
+                                                                  endpoint,
+                                                                  task.task_id, 
+                                                                  callback= lambda : self._start_task(task, endpoint))
             endpoint.schedule(task)
-            # Put in queue to monitor when transfer has completed
-            self.awaiting_transfer.put((task, endpoint))
         else:
+            print("Staring task")
             self._start_task(task, endpoint)
 
     def _start_task(self, task, endpoint):
@@ -150,7 +147,7 @@ class CawsExecutor(object):
         task.endpoint_status = endpoint.state
         task.timing_info["began"] = datetime.now()
         
-        logger.info("Submitting task to endpoint")
+        print("Submitting task to endpoint")
         endpoint.submit(task)
         self.caws_db.send_monitoring_message(task)
 
@@ -171,33 +168,6 @@ class CawsExecutor(object):
             task.caws_future.set_exception(fut.exception())
         else:
             task.caws_future.set_result(fut.result())
-
-    def _monitor_tasks(self, kill_event):
-        logger.info('Starting task-watchdog thread')
-
-        scheduled = []
-
-        while not kill_event.is_set():
-            n = self.awaiting_transfer.qsize()
-            for _ in range(n):
-                try:
-                    task, endpoint = self._scheduled_tasks.get_nowait()
-                except Empty:
-                    break
-
-                if task.transfer_id is not None and not self._transfer_manger.is_complete(task.transfer_id):
-                    # Task cannot be scheduled, transfers not complete
-                    self._scheduled_tasks.put((task, endpoint))
-                    continue
-
-                if task.transfer_id is not None:
-                    task.timing["transfer_time"] = self._transfer_manger.get_transfer_time(transfer_num)
-                    # TODO: Update transfer model
-
-                self._start_task(task, endpoint)
-
-            # Wait before iterating through queue again
-            time.sleep(self._task_watchdog_sleep)
 
     def _check_endpoints(self, kill_event):
         logger.info('Starting endpoint-watchdog thread')

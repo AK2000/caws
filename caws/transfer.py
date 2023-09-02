@@ -161,10 +161,12 @@ class TransferManager(object):
         task_record.status = TransferStatus.PENDING
         if task_record.remaining == 0:
             if not task_record.error:
-                task_record.callback()
+                if task_record.callback is not None:
+                    task_record.callback()
                 task_record.status = TransferStatus.COMPLETED
             else:
-                task_record.failed_callback()
+                if task_record.failed_callback is not None:
+                    task_record.failed_callback()
                 task_record.status = TransferStatus.FAILED
         else:
             task_record.status = TransferStatus.EXECUTING

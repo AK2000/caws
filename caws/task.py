@@ -15,6 +15,7 @@ from caws.utils import client
 if TYPE_CHECKING:
     from caws.endpoint import Endpoint, EndpointState
     from caws.executor import CawsExecutor
+    from caws.transfer import TransferRecord
 
 class TaskStatus(IntEnum):
     CREATED: int = 0
@@ -40,7 +41,7 @@ class CawsTaskInfo:
     task_id: str
     function_name: str
     task_status: TaskStatus = TaskStatus.CREATED
-    transfer_id: int | None = None 
+    transfer_record: TransferRecord | None = None 
     timing_info: dict[str, datetime.DateTime] = field(default_factory=dict)
     caws_future: Future[Any] | None = None
     gc_future: ComputeFuture[Any] | None = None
