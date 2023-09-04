@@ -125,7 +125,7 @@ class CawsExecutor(object):
         task.task_status = TaskStatus.SCHEDULED
         task.timing_info["scheduled"] = datetime.now()
         print("Submitting message to db")
-        # self.caws_db.send_monitoring_message(task_info)
+        self.caws_db.send_monitoring_message(task)
 
         print("Reading files")
         # Replacing input files with paths after Globus transfers

@@ -70,7 +70,7 @@ def test_executor_transfer():
 
     destination = caws.Endpoint(dest_name,
                                 dest_compute_id,
-                                local_path="/home/alokvk2/"
+                                local_path="/home/alokvk2/",
                                 transfer_id=dest_transfer_id,
                                 monitoring_avail=True)
 
