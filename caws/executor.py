@@ -18,6 +18,7 @@ from caws.task import CawsTaskInfo, TaskStatus, CawsFuture
 from caws.endpoint import Endpoint, EndpointState
 from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
+from caws.path import CawsPath
 
 logger = logging.getLogger(__name__)
 ch = logging.StreamHandler()
@@ -91,7 +92,7 @@ class CawsExecutor(object):
 
     def submit(self, fn: Callable, *args, **kwargs):
         task_id = str(uuid.uuid4())
-        task_info = CawsTaskInfo(fn, args, kwargs, task_id, fn.__name__)
+        task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, fn.__name__)
         task_info.caws_future = CawsFuture(task_info)
         task_info.timing_info["submit"] = datetime.now()
         self.caws_db.send_monitoring_message(task_info)
@@ -127,7 +128,17 @@ class CawsExecutor(object):
         # self.caws_db.send_monitoring_message(task_info)
 
         print("Reading files")
-        files = task.task_kwargs.get("_globus_files", {}) # Must be dict of {src: [<paths>]}
+        # Replacing input files with paths after Globus transfers
+        files = []
+        for i, arg in enumerate(task.task_args):
+            if isinstance(arg, CawsPath):
+                files.append(arg)
+                task.task_args[i] = arg.get_dest_path(endpoint)
+
+        for key, arg in task.task_kwargs.items():
+            if isinstance(arg, CawsPath):
+                files.append(arg)
+                task.task_kwargs[key] = arg.get_dest_path(endpoint)
         print(files)
 
         # Start Globus transfer of required files, if any

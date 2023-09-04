@@ -31,7 +31,8 @@ def gemm(dim: int):
     return A @ B
 gemm = mainify(gemm)
 
-def transfer_file(_globus_files):
-    return True
+def transfer_file(path):
+    with open(path) as f:
+        return True
 transfer_file = mainify(transfer_file)
 

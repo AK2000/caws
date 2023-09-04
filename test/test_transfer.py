@@ -5,11 +5,12 @@ import caws
 from caws.strategy import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
 from caws.transfer import TransferManager, TransferStatus
+from caws.path import CawsPath
 
 from util_funcs import transfer_file
 
 def test_transfer_manager():
-    source_path = "/D/UChicago/globus/test_transfer.txt"
+    source_path = "test_transfer.txt"
     source_name = "caws-dev_ep1"
     source_compute_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
     source_transfer_id = "02ca3fe4-0dee-11ee-bdcc-a3018385fcef"
@@ -20,6 +21,7 @@ def test_transfer_manager():
 
     source = caws.Endpoint(source_name,
                            source_compute_id,
+                           local_path="/D/UChicago/globus/",
                            transfer_id=source_transfer_id,
                            monitoring_avail=True)
 
@@ -38,8 +40,8 @@ def test_transfer_manager():
     transfer_manager.start()
     assert transfer_manager.started
 
-    files_by_src = {source_name: [source_path,]}
-    transfer_record = transfer_manager.transfer(files_by_src,
+    file_path = CawsPath(source, source_path)
+    transfer_record = transfer_manager.transfer([file_path,],
                               destination,
                               "test_transfer",
                               True,
@@ -51,7 +53,7 @@ def test_transfer_manager():
     assert transfer_record.status == TransferStatus.COMPLETED
 
 def test_executor_transfer():
-    source_path = "/D/UChicago/globus/test_transfer.txt"
+    source_path = "test_transfer.txt"
     source_name = "caws-dev_ep1"
     source_compute_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
     source_transfer_id = "02ca3fe4-0dee-11ee-bdcc-a3018385fcef"
@@ -62,17 +64,22 @@ def test_executor_transfer():
 
     source = caws.Endpoint(source_name,
                            source_compute_id,
+                           local_path="/D/UChicago/globus/",
                            transfer_id=source_transfer_id,
                            monitoring_avail=True)
 
     destination = caws.Endpoint(dest_name,
                                 dest_compute_id,
+                                local_path="/home/alokvk2/"
                                 transfer_id=dest_transfer_id,
                                 monitoring_avail=True)
-    
+
+    file_path = CawsPath(source, source_path)    
     endpoints = [destination, source]
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, strategy) as executor:
-        fut = executor.submit(transfer_file, _globus_files = {"caws-dev_ep1":["/D/UChicago/globus/test_transfer.txt",]})
-        fut.result()
-        assert True
+        fut = executor.submit(transfer_file, file_path)
+        assert fut.result()
+
+if __name__ == "__main__":
+    test_executor_transfer()

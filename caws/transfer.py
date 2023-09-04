@@ -39,7 +39,7 @@ class TransferRecord:
     error: None | str = None
 
 class TransferManager(object):
-    def __init__(self, endpoints, sync_level='exists', log_level=logging.INFO):
+    def __init__(self, endpoints, sync_level='mtime', log_level=logging.INFO):
         # Authorize with globus
         self.authorize()
 
@@ -64,17 +64,33 @@ class TransferManager(object):
         CLIENT_ID = "61338d24-54d5-408f-a10d-66c06b59f6d2"
         client = globus_sdk.NativeAppAuthClient(CLIENT_ID)
 
-        client.oauth2_start_flow(refresh_tokens=True)
-        authorize_url = client.oauth2_get_authorize_url()
-        print(f"Please go to this URL and login:\n\n{authorize_url}\n")
+        try:
+            with open(os.path.expanduser("~/.caws/refresh_token.txt"), "r") as f:
+                transfer_rt = f.read()
+            with open(os.path.expanduser("~/.caws/access_token.txt"), "r") as f:
+                transfer_at = f.read()
+            with open(os.path.expanduser("~/.caws/expires_at_seconds.txt"), "r") as f:
+                expires_at_s = int(f.read())
+        except FileNotFoundError:
+            client.oauth2_start_flow(refresh_tokens=True)
+            authorize_url = client.oauth2_get_authorize_url()
+            print(f"Please go to this URL and login:\n\n{authorize_url}\n")
 
-        auth_code = input("Please enter the code you get after login here: ").strip()
-        token_response = client.oauth2_exchange_code_for_tokens(auth_code)
+            auth_code = input("Please enter the code you get after login here: ").strip()
+            token_response = client.oauth2_exchange_code_for_tokens(auth_code)
 
-        globus_transfer_data = token_response.by_resource_server["transfer.api.globus.org"]
-        transfer_rt = globus_transfer_data["refresh_token"]
-        transfer_at = globus_transfer_data["access_token"]
-        expires_at_s = globus_transfer_data["expires_at_seconds"]
+            globus_transfer_data = token_response.by_resource_server["transfer.api.globus.org"]
+            transfer_rt = globus_transfer_data["refresh_token"]
+            transfer_at = globus_transfer_data["access_token"]
+            expires_at_s = globus_transfer_data["expires_at_seconds"]
+
+            os.makedirs(os.path.expanduser("~/.caws/"), exist_ok=True)
+            with open(os.path.expanduser("~/.caws/refresh_token.txt"), "w") as f:
+                f.write(transfer_rt)
+            with open(os.path.expanduser("~/.caws/access_token.txt"), "w") as f:
+                f.write(transfer_at)
+            with open(os.path.expanduser("~/.caws/expires_at_seconds.txt"), "w") as f:
+                f.write(str(expires_at_s))
 
         # construct a RefreshTokenAuthorizer
         # note that `client` is passed to it, to allow it to do the refreshes
@@ -102,7 +118,7 @@ class TransferManager(object):
         self.started = False
 
     def transfer(self, 
-                 files_by_src, 
+                 files, 
                  dst,
                  task_name="",
                  unique_name=False,
@@ -112,16 +128,16 @@ class TransferManager(object):
         task_record = TransferRecord(self._next, [], 0, TransferStatus.CREATING, callback, failed_callback)
         self._next += 1 #TODO: Do I need to worry about thread safety here?
 
-        n = len(files_by_src)
-        for i, (src_name, files) in enumerate(files_by_src.items(), 1):
-            src = self.name_to_endpoints[src_name]
+        n = len(files)
+        for i, src_path in enumerate(files, 1):
+            src = src_path.endpoint
+            src_name = src.name
             dst_name = dst.name
 
             if src.transfer_endpoint_id == dst.transfer_endpoint_id:
                 logger.debug(f'Skipped transfer from {src_name} to {dst_name}')
                 continue
 
-            # files, _ = zip(*pairs)
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
 
             tdata = globus_sdk.TransferData(self.transfer_client,
@@ -131,15 +147,14 @@ class TransferManager(object):
                                             .format(self._next + 1, i, n),
                                             sync_level=self.sync_level)
 
-            for f in files:
-                if unique_name:
-                    dst_file = '~/.globus_funcx/test_{}.txt'.format(
-                        str(uuid.uuid4()))
-                    logger.debug('Unique destination file name: {}'
-                                 .format(dst_file))
-                    tdata.add_item(f, dst_file)
-                else:
-                    tdata.add_item(f, f)
+            if unique_name:
+                dst_file = '~/.globus_funcx/test_{}.txt'.format(
+                    str(uuid.uuid4()))
+                logger.debug('Unique destination file name: {}'
+                                .format(dst_file))
+                tdata.add_item(src_path.get_src_path(), dst_file)
+            else:
+                tdata.add_item(src_path.get_src_path(), src_path.get_dest_path(dst))
 
             res = self.transfer_client.submit_transfer(tdata)
 

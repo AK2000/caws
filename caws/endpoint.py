@@ -43,6 +43,7 @@ class Endpoint:
                  name, 
                  compute_id,
                  transfer_id=None,
+                 local_path:str = "/~/",
                  state=EndpointState.COLD,
                  monitoring_avail: bool = False,
                  monitor_url=None,
@@ -54,6 +55,7 @@ class Endpoint:
         self.name = name
         self.compute_endpoint_id = compute_id
         self.transfer_endpoint_id = transfer_id
+        self.local_path = local_path
         self.state = state
         self.monitoring_avail = monitoring_avail
         self.monitor_url = monitor_url
