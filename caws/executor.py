@@ -46,16 +46,14 @@ class CawsExecutor(object):
                  strategy: Strategy,
                  caws_database_url: str | None = None,
                  task_watchdog_sleep: float = 0.2,
-                 endpoint_watchdog_sleep: float = 5,
-                 task_scheduling_sleep: float = 5):
+                 endpoint_watchdog_sleep: float = 5):
         
         self.endpoints = endpoints
         self.strategy = strategy
-        self._transfer_manager = TransferManager(endpoints, log_level=logging.DEBUG)
+        self._transfer_manager = TransferManager(log_level=logging.DEBUG)
 
         self._task_watchdog_sleep = task_watchdog_sleep
         self._endpoint_watchdog_sleep = endpoint_watchdog_sleep
-        self._task_scheduling_sleep = task_scheduling_sleep
 
         if caws_database_url is None:
             caws_database_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
@@ -92,7 +90,8 @@ class CawsExecutor(object):
 
     def submit(self, fn: Callable, *args, **kwargs):
         task_id = str(uuid.uuid4())
-        task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, fn.__name__)
+        name = kwargs.get("name", f"{fn.__module__}.{fn.__qualname__}")
+        task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, name)
         task_info.caws_future = CawsFuture(task_info)
         task_info.timing_info["submit"] = datetime.now()
         self.caws_db.send_monitoring_message(task_info)

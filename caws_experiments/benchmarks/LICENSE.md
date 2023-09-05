@@ -1,4 +1,4 @@
-Benchmarks in this folder were derived from th SEBS benchmark suite
+Benchmarks in this folder were derived from the SeBS benchmark suite
 https://github.com/spcl/serverless-benchmarks
 
 BSD 3-Clause License

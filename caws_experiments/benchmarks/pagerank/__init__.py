@@ -1,0 +1,2 @@
+from caws_experiments.benchmarks.pagerank.benchmark import graph_pagerank as func
+from caws_experiments.benchmarks.pagerank.inputs import generate_inputs

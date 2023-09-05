@@ -1,13 +1,11 @@
-def parse_directory(directory):
-
-    size = 0
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            size += os.path.getsize(os.path.join(root, file))
-    return size
-
-
 def compression():
+    def parse_directory(directory):
+        size = 0
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                size += os.path.getsize(os.path.join(root, file))
+        return size
+
     input_bucket = event.get('bucket').get('input')
     output_bucket = event.get('bucket').get('output')
     key = event.get('object').get('key')

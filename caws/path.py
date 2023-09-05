@@ -15,3 +15,6 @@ class CawsPath:
 
     def get_dest_path(self, dst_endpoint):
         return os.path.join(dst_endpoint.local_path, self.source_path)
+
+def to_caws_path(src_endpoint: caws.Endpoint, host_path: str):
+    pass

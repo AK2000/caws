@@ -36,7 +36,7 @@ def test_transfer_manager():
     def failure_callback(transfer_record):
         assert False, f"Transfer failed: {transfer_record.error}"
 
-    transfer_manager = TransferManager([source, destination], log_level=logging.DEBUG)
+    transfer_manager = TransferManager(log_level=logging.DEBUG)
     transfer_manager.start()
     assert transfer_manager.started
 

@@ -39,16 +39,11 @@ class TransferRecord:
     error: None | str = None
 
 class TransferManager(object):
-    def __init__(self, endpoints, sync_level='mtime', log_level=logging.INFO):
+    def __init__(self, sync_level='mtime', log_level=logging.INFO):
         # Authorize with globus
         self.authorize()
 
         self.transfer_client = globus_sdk.TransferClient(authorizer=self.authorizer)
-        self.endpoints = endpoints
-        self.name_to_endpoints = {}
-        for endpoint in self.endpoints:
-            self.name_to_endpoints[endpoint.name] = endpoint
-        self.endpoints = endpoints
         self.sync_level = sync_level
         logger.setLevel(log_level)
 

@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, IntEnum
 import requests
 import json
 import sqlalchemy
@@ -17,11 +17,15 @@ from caws.task import CawsTaskInfo
 electricitymaps_url = "https://api-access.electricitymaps.com/free-tier/carbon-intensity/history"
 geolite2_db = os.path.join(os.path.dirname(__file__), 'data', 'GeoLite2-City', 'GeoLite2-City.mmdb')
 
-class EndpointState(Enum):
+class EndpointState(IntEnum):
     DEAD: int = 0
     COLD: int = 1
     WARMING: int = 2
     WARM: int = 3
+
+class EndpointOperations(Enum):
+    TRANSFER: str = "transfer"
+    COMPUTE: str = "compute"
 
 class Endpoint:
     name: str
@@ -30,6 +34,7 @@ class Endpoint:
     state: EndpointState = EndpointState.COLD
     scheduled_tasks: set[str]
     running_tasks: list[CawsTaskInfo] = []
+    operations: list[EndpointOperations] = []
 
     # Location for fetching carbon information
     zone_id: str #i.e: US-MIDW-MISO for Chicago
@@ -53,9 +58,16 @@ class Endpoint:
                  zone_id=None):
                  
         self.name = name
+        
         self.compute_endpoint_id = compute_id
+        if self.compute_endpoint_id:
+            self.operations.append(EndpointOperations.COMPUTE)
+
         self.transfer_endpoint_id = transfer_id
+        if self.transfer_endpoint_id:
+            self.operations.append(EndpointOperations.TRANSFER)
         self.local_path = local_path
+
         self.state = state
         self.monitoring_avail = monitoring_avail
         self.monitor_url = monitor_url
