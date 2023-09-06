@@ -1,4 +1,7 @@
-def compression():
+def compression(directory_path, *, _caws_output_dir):
+    import os
+    os.makedirs(_caws_output_dir, exist_ok=True)
+
     def parse_directory(directory):
         size = 0
         for root, dirs, files in os.walk(directory):
@@ -6,39 +9,24 @@ def compression():
                 size += os.path.getsize(os.path.join(root, file))
         return size
 
-    input_bucket = event.get('bucket').get('input')
-    output_bucket = event.get('bucket').get('output')
-    key = event.get('object').get('key')
-    download_path = '/tmp/{}-{}'.format(key, uuid.uuid4())
-    os.makedirs(download_path)
-
-    s3_download_begin = datetime.datetime.now()
-    client.download_directory(input_bucket, key, download_path)
-    s3_download_stop = datetime.datetime.now()
-    size = parse_directory(download_path)
-
+    size = parse_directory(directory_path)
+    key = "compressed"
     compress_begin = datetime.datetime.now()
-    shutil.make_archive(os.path.join(download_path, key), 'zip', root_dir=download_path)
+    shutil.make_archive(os.path.join(_caws_output_dir, key), 'zip', root_dir=directory_path)
     compress_end = datetime.datetime.now()
 
-    s3_upload_begin = datetime.datetime.now()
     archive_name = '{}.zip'.format(key)
-    archive_size = os.path.getsize(os.path.join(download_path, archive_name))
-    key_name = client.upload(output_bucket, archive_name, os.path.join(download_path, archive_name))
-    s3_upload_stop = datetime.datetime.now()
-
-    download_time = (s3_download_stop - s3_download_begin) / datetime.timedelta(microseconds=1)
-    upload_time = (s3_upload_stop - s3_upload_begin) / datetime.timedelta(microseconds=1)
+    archive_size = os.path.getsize(os.path.join(directory_path, archive_name))
     process_time = (compress_end - compress_begin) / datetime.timedelta(microseconds=1)
+
+    archive_path = os.path.join(_caws_output_dir, archive_name)
+
     return {
             'result': {
-                'bucket': output_bucket,
-                'key': key_name
+                'path': archive_path
             },
             'measurement': {
-                'download_time': download_time,
                 'download_size': size,
-                'upload_time': upload_time,
                 'upload_size': archive_size,
                 'compute_time': process_time
             }

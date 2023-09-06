@@ -8,8 +8,9 @@ class CawsPath:
     source_path: str
 
     def __init__(self, src_endpoint: caws.Endpoint, src_path: str, replicate_path: bool = False, isolate: bool = False):
+        rel_path = os.path.relpath(local_path, src_endpoint.local_path)
         self.endpoint = src_endpoint
-        self.source_path = src_path
+        self.source_path = rel_path
         self.replicate_path = replicate_path
         self.isolate = isolate
 
@@ -38,7 +39,3 @@ class CawsPath:
 
     def get_dest_local_path(self, dst_endpoint, task_id = None):
         return self._get_endpoint_path(dst_endpoint.local_path, task_id)
-
-def to_caws_path(src_endpoint: caws.Endpoint, local_path: str):
-    rel_path = os.path.relpath(local_path, src_endpoint.local_path)
-    return CawsPath(src_endpoint, rel_path)

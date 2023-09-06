@@ -1,0 +1,2 @@
+from caws_experiments.benchmarks.thumbnail.benchmark import thumbnailer as func
+from caws_experiments.benchmarks.thumbnail.inputs import generate_inputs

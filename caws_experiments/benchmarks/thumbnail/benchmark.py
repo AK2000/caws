@@ -1,4 +1,4 @@
-def thumbnailer(img_path, width, height):
+def thumbnailer(img_path, width, height, *, _caws_output_dir):
     import datetime
     import io
     import os
@@ -6,23 +6,30 @@ def thumbnailer(img_path, width, height):
     import uuid
     from urllib.parse import unquote_plus
     from PIL import Image
+    
+    os.makedirs(_caws_output_dir, exist_ok=True)
 
     # Memory-based solution
-    def resize_image(img_path, w, h):
+    def resize_image(img_path, w, h, output_dir):
         with Image.open(img_path) as image:
             image.thumbnail((w,h))
-            out = io.BytesIO()
+            out = os.path.join(_caws_output_dir, "thumbnail.jpeg")
             image.save(out, format='jpeg')
-            # necessary to rewind to the beginning of the buffer
-            out.seek(0)
             return out
 
+    process_begin = datetime.datetime.now()
     resized = resize_image(img_path, width, height)
-    resized_size = resized.getbuffer().nbytes
+    resized_size = os.path.getsize(resized)
+    process_end = datetime.datetime.now()
 
-    # TODO: Figure out upload of output image
-    upload_begin = datetime.datetime.now()
-    key_name = client.upload_stream(output_bucket, key, resized)
-    upload_end = datetime.datetime.now()
+    process_time = (process_end - process_begin) / datetime.timedelta(microseconds=1)
 
-    return resized #TODO: Figure out if this works?
+    return {
+            'result': {
+                'path': resized
+            },
+            'measurement': {
+                'upload_size': resized_size,
+                'compute_time': process_time
+            }
+    }

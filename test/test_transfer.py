@@ -6,7 +6,7 @@ import caws
 from caws.strategy import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
 from caws.transfer import TransferManager, TransferStatus
-from caws.path import to_caws_path
+from caws.path import CawsPath
 
 from util_funcs import transfer_file
 
@@ -77,7 +77,7 @@ def test_executor_transfer():
                                 monitoring_avail=True)
 
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
-    caws_path = to_caws_path(source, file_path)
+    caws_path = CawsPath(source, file_path)
     endpoints = [destination, source]
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, strategy) as executor:

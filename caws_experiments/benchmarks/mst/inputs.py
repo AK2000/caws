@@ -4,5 +4,5 @@ size_generators = {
     'large': 100000
 }
 
-def generate_inputs(src_endpoint, size):
+def generate_inputs(src_endpoint, size, data_dir=""):
     return (size_generators[size], ), {}

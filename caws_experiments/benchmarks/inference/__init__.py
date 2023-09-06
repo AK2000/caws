@@ -1,0 +1,2 @@
+from caws_experiments.benchmarks.inference.benchmark import image_recognition as func
+from caws_experiments.benchmarks.inference.inputs import generate_inputs

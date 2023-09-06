@@ -15,10 +15,16 @@ def image_recognition(model_path, image_path, class_index_path):
 
     global model
     if not model:
+        model_process_begin = datetime.datetime.now()
         model = resnet50(pretrained=False)
         model.load_state_dict(torch.load(model_path))
         model.eval()
-   
+        model_process_end = datetime.datetime.now()
+    else:
+        model_process_begin = datetime.datetime.now()
+        model_process_end = datetime.datetime.now()
+    
+    process_begin = datetime.datetime.now()
     input_image = Image.open(image_path)
     preprocess = transforms.Compose([
         transforms.Resize(256),
@@ -34,5 +40,14 @@ def image_recognition(model_path, image_path, class_index_path):
     prob = torch.nn.functional.softmax(output[0], dim=0)
     _, indices = torch.sort(output, descending = True)
     ret = idx2label[index]
-
-    return {'idx': index.item(), 'class': ret}
+    process_end = datetime.datetime.now()
+    
+    model_process_time = (model_process_end - model_process_begin) / datetime.timedelta(microseconds=1)
+    process_time = (process_end - process_begin) / datetime.timedelta(microseconds=1)
+    return {
+            'result': {'idx': index.item(), 'class': ret},
+            'measurement': {
+                'compute_time': process_time + model_process_time,
+                'model_time': model_process_time,
+            }
+        }
