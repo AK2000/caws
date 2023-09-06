@@ -31,8 +31,20 @@ def gemm(dim: int):
     return A @ B
 gemm = mainify(gemm)
 
-def transfer_file(path):
+def transfer_file(path, _caws_output_dir):
+    import os
+
+    # First try opening a file transferred in
     with open(path) as f:
-        return True
+        pass
+
+    # Now try creating a file output
+    os.makedirs(_caws_output_dir, exist_ok=True)
+    output_path = os.path.join(_caws_output_dir, "output.txt")
+    with open(output_path, "w") as f:
+        f.write("Hello World!\n")
+
+    return output_path
+
 transfer_file = mainify(transfer_file)
 

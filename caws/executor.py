@@ -10,9 +10,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, 
 from threading import Thread, Lock, Event
 from collections import defaultdict
 from datetime import datetime
+import inspect
 
-from caws.utils import client
-from caws.transfer import TransferManager
+from caws.utils import create_output_dir_wrapper
+from caws.transfer import TransferManager, TransferException
 from caws.strategy import Strategy
 from caws.task import CawsTaskInfo, TaskStatus, CawsFuture
 from caws.endpoint import Endpoint, EndpointState
@@ -120,34 +121,41 @@ class CawsExecutor(object):
                 time.sleep(self._task_scheduling_sleep)
 
     def _schedule_task(self, task, endpoint):
-        print("In scheduled task")
         task.task_status = TaskStatus.SCHEDULED
         task.timing_info["scheduled"] = datetime.now()
-        print("Submitting message to db")
         self.caws_db.send_monitoring_message(task)
 
-        print("Reading files")
         # Replacing input files with paths after Globus transfers
         files = []
         for i, arg in enumerate(task.task_args):
             if isinstance(arg, CawsPath):
                 files.append(arg)
-                task.task_args[i] = arg.get_dest_path(endpoint)
+                task.task_args[i] = arg.get_dest_local_path(endpoint, str(task.task_id))
 
         for key, arg in task.task_kwargs.items():
             if isinstance(arg, CawsPath):
                 files.append(arg)
-                task.task_kwargs[key] = arg.get_dest_path(endpoint)
-        print(files)
+                task.task_kwargs[key] = arg.get_dest_local_path(endpoint, str(task.task_id))
+
+        # Provide function endpoint path for storing results
+        # This way we provide a mechanism so task outputs don't conflict
+        # with each other and can be written to a Globus accessible directory
+        # TODO: Figure out how this might work with images and K8s
+        # TODO: Figure out how convert returned paths into CawsPaths. Maybe register a deserializer?
+        sig = inspect.signature(task.func)
+        if "_caws_output_dir" in sig.parameters:
+            task.task_kwargs["_caws_output_dir"] = os.path.join(endpoint.local_path, ".caws", str(task.task_id))
+            # task.func = create_output_dir_wrapper(task.func) # Create output dir
 
         # Start Globus transfer of required files, if any
         if len(files) > 0:
             print(f"Starting file transfers for task {task.task_id}")
+            endpoint.schedule(task)
             task.transfer_record = self._transfer_manager.transfer(files, 
                                                                   endpoint,
-                                                                  task.task_id, 
-                                                                  callback= lambda : self._start_task(task, endpoint))
-            endpoint.schedule(task)
+                                                                  str(task.task_id), 
+                                                                  callback = lambda : self._start_task(task, endpoint),
+                                                                  failed_callback = lambda : self._transfer_error(task, endpoint))
         else:
             print("Staring task")
             self._start_task(task, endpoint)
@@ -163,6 +171,13 @@ class CawsExecutor(object):
 
         # Must be done last to avoid race condition
         task.gc_future.add_done_callback(lambda fut : self._task_complete_callback(task, fut))
+
+    def _transfer_error(task, endpoint):
+        task.task_status = TaskStatus.ERROR
+        task.timing_info["completed"] = datetime.now()
+        self.caws_db.send_monitoring_message(task)
+        endpoint.discard(task)
+        task.caws_future.set_exception(TransferException(task.transfer_record.error))
 
     def _task_complete_callback(self, task, fut):
         if fut.exception() is not None:

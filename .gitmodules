@@ -1,0 +1,3 @@
+[submodule "serverless-benchmarks-data"]
+	path = serverless-benchmarks-data
+	url = git@github.com:spcl/serverless-benchmarks-data.git

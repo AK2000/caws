@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 import globus_sdk
+from globus_sdk.scopes import TransferScopes
+from globus_sdk.tokenstorage import SimpleJSONFileAdapter
 
 logger = logging.getLogger(__name__)
 ch = logging.StreamHandler()
@@ -41,9 +43,7 @@ class TransferRecord:
 class TransferManager(object):
     def __init__(self, sync_level='mtime', log_level=logging.INFO):
         # Authorize with globus
-        self.authorize()
-
-        self.transfer_client = globus_sdk.TransferClient(authorizer=self.authorizer)
+        self.transfer_client = self.get_transfer_client()
         self.sync_level = sync_level
         logger.setLevel(log_level)
 
@@ -54,44 +54,53 @@ class TransferManager(object):
         self._polling_interval = 1
         self.started = False
 
-    def authorize(self):
+    def login_and_get_transfer_client(self, *, scopes=TransferScopes.all):
+        # note that 'requested_scopes' can be a single scope or a list
+        # this did not matter in previous examples but will be leveraged in
+        # this one
+        self.auth_client.oauth2_start_flow(refresh_tokens=True, requested_scopes=scopes)
+        authorize_url = self.auth_client.oauth2_get_authorize_url()
+        print(f"Please go to this URL and login:\n\n{authorize_url}\n")
+
+        auth_code = input("Please enter the code here: ").strip()
+        token_response = self.auth_client.oauth2_exchange_code_for_tokens(auth_code)
+        self.token_file.store(token_response)
+        tokens = token_response.by_resource_server["transfer.api.globus.org"]
+
+        authorizer = globus_sdk.RefreshTokenAuthorizer(
+                tokens["refresh_token"],
+                self.auth_client,
+                access_token=tokens["access_token"],
+                expires_at=tokens["expires_at_seconds"],
+                on_refresh=self.token_file.on_refresh
+            )
+        # return the TransferClient object, as the result of doing a login
+        return globus_sdk.TransferClient(
+            authorizer=authorizer
+        )
+
+    def get_transfer_client(self):
         # this is the tutorial client ID
         CLIENT_ID = "61338d24-54d5-408f-a10d-66c06b59f6d2"
-        client = globus_sdk.NativeAppAuthClient(CLIENT_ID)
+        self.auth_client = globus_sdk.NativeAppAuthClient(CLIENT_ID)
+        self.scopes = [TransferScopes.all]
+        self.token_file = SimpleJSONFileAdapter(os.path.expanduser("~/.caws/globus_tokens.json"))
 
-        try:
-            with open(os.path.expanduser("~/.caws/refresh_token.txt"), "r") as f:
-                transfer_rt = f.read()
-            with open(os.path.expanduser("~/.caws/access_token.txt"), "r") as f:
-                transfer_at = f.read()
-            with open(os.path.expanduser("~/.caws/expires_at_seconds.txt"), "r") as f:
-                expires_at_s = int(f.read())
-        except FileNotFoundError:
-            client.oauth2_start_flow(refresh_tokens=True)
-            authorize_url = client.oauth2_get_authorize_url()
-            print(f"Please go to this URL and login:\n\n{authorize_url}\n")
+        if not self.token_file.file_exists():
+            return self.login_and_get_transfer_client()
+        else:
+            tokens = self.token_file.get_token_data("transfer.api.globus.org")
+            authorizer = globus_sdk.RefreshTokenAuthorizer(
+                tokens["refresh_token"],
+                self.auth_client,
+                access_token=tokens["access_token"],
+                expires_at=tokens["expires_at_seconds"],
+                on_refresh=self.token_file.on_refresh
+            )
 
-            auth_code = input("Please enter the code you get after login here: ").strip()
-            token_response = client.oauth2_exchange_code_for_tokens(auth_code)
-
-            globus_transfer_data = token_response.by_resource_server["transfer.api.globus.org"]
-            transfer_rt = globus_transfer_data["refresh_token"]
-            transfer_at = globus_transfer_data["access_token"]
-            expires_at_s = globus_transfer_data["expires_at_seconds"]
-
-            os.makedirs(os.path.expanduser("~/.caws/"), exist_ok=True)
-            with open(os.path.expanduser("~/.caws/refresh_token.txt"), "w") as f:
-                f.write(transfer_rt)
-            with open(os.path.expanduser("~/.caws/access_token.txt"), "w") as f:
-                f.write(transfer_at)
-            with open(os.path.expanduser("~/.caws/expires_at_seconds.txt"), "w") as f:
-                f.write(str(expires_at_s))
-
-        # construct a RefreshTokenAuthorizer
-        # note that `client` is passed to it, to allow it to do the refreshes
-        self.authorizer = globus_sdk.RefreshTokenAuthorizer(
-            transfer_rt, client, access_token=transfer_at, expires_at=expires_at_s
-        )
+            return globus_sdk.TransferClient(
+                authorizer=authorizer
+            )                      
 
     def start(self):
         if self.started:
@@ -101,7 +110,7 @@ class TransferManager(object):
         self._terminate_event = Event()
 
         # Initialize thread to wait on transfers
-        self._tracker = Thread(target=self._track_transfers, daemon=True)
+        self._tracker = Thread(target=self._track_transfers)
         self._tracker.start()
     
     def shutdown(self):
@@ -116,7 +125,6 @@ class TransferManager(object):
                  files, 
                  dst,
                  task_name="",
-                 unique_name=False,
                  callback=None,
                  failed_callback=None):
 
@@ -135,23 +143,33 @@ class TransferManager(object):
 
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
 
-            tdata = globus_sdk.TransferData(self.transfer_client,
-                                            src.transfer_endpoint_id,
-                                            dst.transfer_endpoint_id,
+            tdata = globus_sdk.TransferData(source_endpoint=src.transfer_endpoint_id,
+                                            destination_endpoint=dst.transfer_endpoint_id,
                                             label='FuncX Transfer {} - {} of {}'
                                             .format(self._next + 1, i, n),
                                             sync_level=self.sync_level)
 
-            if unique_name:
-                dst_file = '~/.globus_funcx/test_{}.txt'.format(
-                    str(uuid.uuid4()))
-                logger.debug('Unique destination file name: {}'
-                                .format(dst_file))
-                tdata.add_item(src_path.get_src_path(), dst_file)
-            else:
-                tdata.add_item(src_path.get_src_path(), src_path.get_dest_path(dst))
+            tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_name))
 
-            res = self.transfer_client.submit_transfer(tdata)
+            try:
+                res = self.transfer_client.submit_transfer(tdata)
+            except globus_sdk.TransferAPIError as err:
+                if err.info.consent_required:
+                    print(
+                        "Got a ConsentRequired error with scopes:",
+                        err.info.consent_required.required_scopes,
+                    )
+                    print("You will have to login with Globus again")
+                    self.scopes.extend(err.info.consent_required.required_scopes)
+                    self.transfer_client = self.login_and_get_transfer_client(scopes=self.scopes)
+                    res = self.transfer_client.submit_transfer(tdata)
+                else:
+                    task_record.status = TransferStatus.PENDING
+                    if task_record.failed_callback is not None:
+                        task_record.failed_callback()
+                    task_record.status = TransferStatus.FAILED
+                    
+            
 
             if res['code'] != 'Accepted':
                 raise ValueError('Transfer not accepted')
@@ -243,3 +261,6 @@ class TransferManager(object):
             next_send += self._polling_interval
         
         logger.info('Ending transfer tracking thread')
+
+class TransferException(Exception):
+    pass

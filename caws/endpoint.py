@@ -48,7 +48,8 @@ class Endpoint:
                  name, 
                  compute_id,
                  transfer_id=None,
-                 local_path:str = "/~/",
+                 endpoint_path:str = "~/", # TODO: Figure out resolve use for default path
+                 local_path:str = None,
                  state=EndpointState.COLD,
                  monitoring_avail: bool = False,
                  monitor_url=None,
@@ -66,7 +67,9 @@ class Endpoint:
         self.transfer_endpoint_id = transfer_id
         if self.transfer_endpoint_id:
             self.operations.append(EndpointOperations.TRANSFER)
-        self.local_path = local_path
+        self.endpoint_path = endpoint_path
+        self.local_path = local_path if local_path is not None else endpoint_path
+
 
         self.state = state
         self.monitoring_avail = monitoring_avail
@@ -172,6 +175,9 @@ class Endpoint:
 
     def schedule(self, task):
         self.scheduled_tasks.add(task.task_id)
+    
+    def discard(self, task):
+        self.scheduled_tasks.discard(task.task_id)
         
     def submit(self, task):
         if self.state == EndpointState.COLD:

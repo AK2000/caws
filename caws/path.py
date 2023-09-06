@@ -1,20 +1,44 @@
 import caws
 
 import os
+import uuid
 
 class CawsPath:
     endpoint: caws.Endpoint
     source_path: str
 
-    def __init__(self, src_endpoint: caws.Endpoint, src_path: str):
+    def __init__(self, src_endpoint: caws.Endpoint, src_path: str, replicate_path: bool = False, isolate: bool = False):
         self.endpoint = src_endpoint
         self.source_path = src_path
+        self.replicate_path = replicate_path
+        self.isolate = isolate
 
-    def get_src_path(self):
+    def get_src_endpoint_path(self):
+        return os.path.join(self.endpoint.endpoint_path, self.source_path)
+
+    def get_src_local_path(self):
         return os.path.join(self.endpoint.local_path, self.source_path)
 
-    def get_dest_path(self, dst_endpoint):
-        return os.path.join(dst_endpoint.local_path, self.source_path)
+    def _get_endpoint_path(self, base_path, task_id):
+        path = os.path.join(base_path, ".caws")
+        if self.isolate:
+            if task_id is None:
+                raise Exception("Cannot create isolated file without task id")
+            path = os.path.join(path, task_id)
+        
+        if self.replicate_path:
+            path = os.path.join(path, self.source_path)
+        else:
+            path = os.path.join(path, os.path.basename(self.source_path))
 
-def to_caws_path(src_endpoint: caws.Endpoint, host_path: str):
-    pass
+        return path
+
+    def get_dest_endpoint_path(self, dst_endpoint, task_id = None):
+        return self._get_endpoint_path(dst_endpoint.endpoint_path, task_id)
+
+    def get_dest_local_path(self, dst_endpoint, task_id = None):
+        return self._get_endpoint_path(dst_endpoint.local_path, task_id)
+
+def to_caws_path(src_endpoint: caws.Endpoint, local_path: str):
+    rel_path = os.path.relpath(local_path, src_endpoint.local_path)
+    return CawsPath(src_endpoint, rel_path)
