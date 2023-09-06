@@ -10,7 +10,9 @@ First you have to setup a globus compute endpoint with the correct forks of all 
 On a system where you want to run a compute endpoint, use the following commands to install globus-compute-endpoint and create an endpoint:
 ```
 git clone git@github.com:AK2000/funcX.git
-cd funcX/compute_endpoint
+cd funcx
+git checkout power_monitoring_new
+cd compute_endpoint
 pip install . # Install globus compute endpoint
 
 globus-compute-endpoint configure <ENDPOINT_NAME>
@@ -31,7 +33,7 @@ config = Config(...,
                         logging_endpoint="postgresql://<user>:<password>@<address>/monitoring"),
 )
 ```
-The `logging_endpoint` is a relational database that stores resource and task monitoring information and serves as a source for the CAWS client.
+The `logging_endpoint` is a relational database that stores resource and task monitoring information and serves as a source for the CAWS client. Currently, you must host this database yourself.
 
 A sample configuration with both monitoring enabled and the correct executor configuration is in `docs/sample_config.json`.
 
@@ -41,6 +43,13 @@ globus-compute-endpoint start <ENDPOINT_NAME>
 ```
 
 ### Host
+First clone the repository. Make sure to also download the SeBS data submodule:
+
+```
+git clone git@github.com:/AK2000/caws.git
+git submodule update --init --recursive
+cd caws
+```
 
 Finally, to install this repo with it's dependencies and the experiments, run:
 ```

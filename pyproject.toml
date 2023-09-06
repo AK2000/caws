@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "globus-compute-sdk >= 0.2.1",
+    "globus-compute-sdk @ git+https://github.com/AK2000/funcX@power_monitoring_new#subdirectory=compute_sdk",
     "sqlalchemy",
     "geoip2"
 ]
