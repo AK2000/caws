@@ -8,7 +8,7 @@ class CawsPath:
     source_path: str
 
     def __init__(self, src_endpoint: caws.Endpoint, src_path: str, replicate_path: bool = False, isolate: bool = False):
-        rel_path = os.path.relpath(local_path, src_endpoint.local_path)
+        rel_path = os.path.relpath(src_path, src_endpoint.local_path)
         self.endpoint = src_endpoint
         self.source_path = rel_path
         self.replicate_path = replicate_path

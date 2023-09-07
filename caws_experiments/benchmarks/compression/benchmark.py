@@ -1,5 +1,8 @@
 def compression(directory_path, *, _caws_output_dir):
     import os
+    import datetime
+    import shutil
+    
     os.makedirs(_caws_output_dir, exist_ok=True)
 
     def parse_directory(directory):
@@ -16,10 +19,9 @@ def compression(directory_path, *, _caws_output_dir):
     compress_end = datetime.datetime.now()
 
     archive_name = '{}.zip'.format(key)
-    archive_size = os.path.getsize(os.path.join(directory_path, archive_name))
-    process_time = (compress_end - compress_begin) / datetime.timedelta(microseconds=1)
-
     archive_path = os.path.join(_caws_output_dir, archive_name)
+    archive_size = os.path.getsize(archive_path)
+    process_time = (compress_end - compress_begin) / datetime.timedelta(microseconds=1)
 
     return {
             'result': {

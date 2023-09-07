@@ -27,6 +27,12 @@ from caws.predictors.transfer_predictors import TransferPredictor
     help="Location of experiment config.",
 )
 @click.option(
+    "--data_dir", "-d",
+    type=str,
+    default="serverless-benchmarks-data",
+    help="Location of data directory for benchmarks",
+)
+@click.option(
     "--ntasks", "-n",
     type=int,
     default=1,
@@ -37,12 +43,13 @@ def run_benchmark(benchmark_name,
             benchmark_input_size,
             endpoint_name,
             config,
+            data_dir,
             ntasks,
             warmup):
     config_obj = json.load(open(config, "r"))
     benchmark = benchmark_utils.import_benchmark(benchmark_name)
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
-    args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size)
+    args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
     func = benchmark_utils.mainify(benchmark.func)
 
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
@@ -57,6 +64,9 @@ def run_benchmark(benchmark_name,
         for _ in range(ntasks):
             futures.append(executor.submit(func, *args, **kwargs))
         concurrent.futures.wait(futures)
+
+        for future in futures:
+            future.result()
 
 if __name__ == "__main__":
     run_benchmark()

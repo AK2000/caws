@@ -9,7 +9,7 @@ from caws.path import CawsPath
     :param src_endpoint
     :param data_dir: directory where benchmark data is placed
 '''
-def generate_input(src_endpoint, size, data_dir=""):
+def generate_inputs(src_endpoint, size, data_dir=""):
     data = os.path.join(data_dir, "300.utilities", "311.compression", "acmart-master")
     data_path = CawsPath(src_endpoint, data, isolate=True)
 

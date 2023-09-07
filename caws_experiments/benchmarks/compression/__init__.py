@@ -1,0 +1,2 @@
+from caws_experiments.benchmarks.compression.benchmark import compression as func
+from caws_experiments.benchmarks.compression.inputs import generate_inputs
