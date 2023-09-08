@@ -1,3 +1,6 @@
+import glob
+import os
+
 from caws.path import CawsPath
 
 def generate_inputs(src_endpoint, size, data_dir=""):

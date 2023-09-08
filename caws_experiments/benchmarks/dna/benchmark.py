@@ -14,7 +14,7 @@ def dna_visualization(download_path, *, _caws_output_dir):
 
     output_path = os.path.join(_caws_output_dir, "visualization.json")
     with open(output_path, "w") as fp:
-        json.dump(result)
+        json.dump(result, fp)
 
     process_time = (process_end - process_begin) / datetime.timedelta(microseconds=1)
 

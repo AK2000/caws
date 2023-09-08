@@ -1,4 +1,4 @@
-def video_processing(download_path, op, * _caws_output_dir, watermark_path=None):
+def video_processing(download_path, duration, op, *, _caws_output_dir, watermark_path=None):
     import datetime
     import os
     import stat
@@ -19,7 +19,7 @@ def video_processing(download_path, op, * _caws_output_dir, watermark_path=None)
             raise RuntimeError()
 
     # https://superuser.com/questions/556029/how-do-i-convert-a-video-to-gif-using-ffmpeg-with-reasonable-quality
-    def to_gif(video, duration, event):
+    def to_gif(video, duration):
         output = os.path.join(_caws_output_dir, 'processed-{}.gif'.format(os.path.basename(video)))
         call_ffmpeg(["-i", video,
             "-t",
@@ -31,7 +31,7 @@ def video_processing(download_path, op, * _caws_output_dir, watermark_path=None)
         return output
 
     # https://devopstar.com/2019/01/28/serverless-watermark-using-aws-lambda-layers-ffmpeg/
-    def watermark(video, duration, event):
+    def watermark(video, duration):
         output = os.path.join(_caws_output_dir, 'processed-{}.gif'.format(os.path.basename(video)))
         call_ffmpeg([
             "-i", video,
@@ -41,13 +41,13 @@ def video_processing(download_path, op, * _caws_output_dir, watermark_path=None)
             output])
         return output
 
-    def transcode_mp3(video, duration, event):
+    def transcode_mp3(video, duration):
         pass
 
     operations = { 'transcode' : transcode_mp3, 'extract-gif' : to_gif, 'watermark' : watermark }
 
     process_begin = datetime.datetime.now()
-    output_path = operations[op](download_path, duration, event)
+    output_path = operations[op](download_path, duration)
     process_end = datetime.datetime.now()
 
     process_time = (process_end - process_begin) / datetime.timedelta(microseconds=1)
