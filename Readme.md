@@ -67,5 +67,23 @@ $ pytest --endpoint_id <COMPUTE_ID>
 ```
 
 ## Experiments
+The experiments require some additional packages to be installed on the endpoint.
+to install those packages, on the endpoint run:
+
+```
+export ENV_DIR=<PATH_TO_ENV>
+wget https://raw.githubusercontent.com/AK2000/caws/master/scripts/requirements.txt
+conda install -p ${ENV_DIR} --yes --file requirements.txt
+
+wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+tar -xf ffmpeg-release-amd64-static.tar.xz
+rm *.tar.xz
+mv ffmpeg-* ffmpeg
+rm ffmpeg/ffprobe
+# make the binary executable
+chmod 755 ffmpeg/ffmpeg
+# move the binary onto the environment path
+mv ffmpeg/ffmpeg ${ENV_DIR}/bin/
+```
 
 ## Bookmarklet
