@@ -95,9 +95,7 @@ class Endpoint:
         self.metadata = client.get_endpoint_metadata(self.compute_endpoint_id)
 
         self.gce = Executor(endpoint_id=self.compute_endpoint_id,
-                            monitoring=self.monitoring_avail, 
-                            monitor_resources=True if self.monitoring_avail else False,
-                            resource_monitoring_interval=0.5)
+                            monitoring=self.monitoring_avail)
 
         self.monitor_carbon = monitor_carbon
         if self.monitor_carbon:
