@@ -7,7 +7,7 @@ def generate_inputs(src_endpoint, size, data_dir=""):
     model_name = 'resnet50-19c8e357.pth'
     model_path = CawsPath(src_endpoint, os.path.join(data_dir, 'model', model_name))
 
-    SCRIPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+    SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
     class_index_path = CawsPath(src_endpoint, os.path.join(SCRIPT_DIR, "imagenet_class_index.json"))
 
     input_images = []

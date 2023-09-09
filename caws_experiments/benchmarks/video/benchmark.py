@@ -8,11 +8,7 @@ def video_processing(download_path, duration, op, *, _caws_output_dir, watermark
 
     def call_ffmpeg(args):
         # TODO: Ensure ffmpeg is on path
-        ret = subprocess.run(['ffmpeg', '-y'] + args,
-                #subprocess might inherit Lambda's input for some reason
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-        )
+        ret = subprocess.run(['ffmpeg', '-y'] + args, check=True)
         if ret.returncode != 0:
             print('Invocation of ffmpeg failed!')
             print('Out: ', ret.stdout.decode('utf-8'))
