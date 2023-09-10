@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+from datetime import datetime
 import logging
 import threading
 from threading import Thread, Event
@@ -10,11 +11,14 @@ from queue import Queue
 from enum import IntEnum
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional
+import json
 
 import globus_sdk
 from globus_sdk.scopes import TransferScopes
 from globus_sdk.tokenstorage import SimpleJSONFileAdapter
+
+from caws.database import CawsDatabaseManager
 
 logger = logging.getLogger(__name__)
 ch = logging.StreamHandler()
@@ -41,7 +45,7 @@ class TransferRecord:
     error: None | str = None
 
 class TransferManager(object):
-    def __init__(self, sync_level='mtime', log_level=logging.INFO):
+    def __init__(self, caws_db: Optional[CawsDatabaseManager] = None, sync_level='mtime', log_level=logging.INFO):
         # Authorize with globus
         self.transfer_client = self.get_transfer_client()
         self.sync_level = sync_level
@@ -53,6 +57,7 @@ class TransferManager(object):
 
         self._polling_interval = 1
         self.started = False
+        self.caws_db = caws_db
 
     def login_and_get_transfer_client(self, *, scopes=TransferScopes.all):
         # note that 'requested_scopes' can be a single scope or a list
@@ -124,16 +129,19 @@ class TransferManager(object):
     def transfer(self, 
                  files, 
                  dst,
-                 task_name="",
+                 task_id="",
                  callback=None,
                  failed_callback=None):
 
         task_record = TransferRecord(self._next, [], 0, TransferStatus.CREATING, callback, failed_callback)
         self._next += 1 #TODO: Do I need to worry about thread safety here?
 
-        n = len(files)
-        for i, src_path in enumerate(files, 1):
-            src = src_path.endpoint
+        files_by_src = defaultdict(list)
+        for src_path in files:
+            files_by_src[src_path.endpoint].append(src_path)
+
+        n = len(files_by_src)
+        for i, (src, files) in enumerate(files_by_src.items()):
             src_name = src.name
             dst_name = dst.name
 
@@ -148,8 +156,12 @@ class TransferManager(object):
                                             label='FuncX Transfer {} - {} of {}'
                                             .format(self._next + 1, i, n),
                                             sync_level=self.sync_level)
-
-            tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_name))
+            size = 0
+            file_paths = []
+            for src_path in files:
+                size += src_path.size
+                file_paths.append(src_path.get_src_endpoint_path())
+                tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_id))
 
             try:
                 res = self.transfer_client.submit_transfer(tdata)
@@ -176,15 +188,22 @@ class TransferManager(object):
 
             task_record.remaining += 1
             self.active_transfers[res['task_id']] = {
-                'name': f"{task_name} {i}/{n}",
-                'src_id': src.transfer_endpoint_id,
-                'dest_id': dst.transfer_endpoint_id,
-                'files': files,
-                'submission_time': time.time(),
+                'name': f"{task_id} {i}/{n}",
+                'transfer_id': res["task_id"],
+                'caws_task_id': task_id, 
+                'src_endpoint_id': src.compute_endpoint_id,
+                'dest_endpoint_id': dst.compute_endpoint_id,
+                'files': json.dumps(file_paths),
+                'size': size,
+                'time_submit': datetime.now(),
+                'transfer_status': "CREATED",
                 'task_record': task_record
             }
             task_record.transfer_ids.append(res['task_id'])
             logger.debug(f"Submited Transfer to Globus, task id: {res['task_id']}")
+
+            if self.caws_db:
+                self.caws_db.send_transfer_message(task_record)
         
         task_record.status = TransferStatus.PENDING
         if task_record.remaining == 0:
@@ -241,7 +260,9 @@ class TransferManager(object):
                 if status['status'] == 'ACTIVE':
                     continue
 
+                info['time_completed'] = datetime.now()
                 if status['status'] == 'FAILED':
+                    info["transfer_status"] = "FAILED"
                     logger.error('Task {} failed. Canceling task!'
                                  .format(transfer_id))
                     res = self.transfer_client.cancel_task(transfer_id)
@@ -250,11 +271,13 @@ class TransferManager(object):
                                      .format(transfer_id, res['message']))
 
                 elif status['status'] == 'SUCCEEDED':
-                    info['time_taken'] = time.time() - info['submission_time']
+                    info["transfer_status"] = "SUCCEEDED"
                     logger.info('Globus transfer {} finished in time {}'
-                                .format(name, info['time_taken']))
+                                .format(name, info['time_completed'] - info['time_submit']))
 
                 self._update_transfer_record(info["task_record"], status)
+                if self.caws_db:
+                    self.caws_db.send_transfer_message(info)
                 del self.active_transfers[transfer_id]
 
             time.sleep(max(0, next_send - time.time()))

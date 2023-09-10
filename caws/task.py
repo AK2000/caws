@@ -47,3 +47,4 @@ class CawsTaskInfo:
     gc_future: ComputeFuture[Any] | None = None
     endpoint: Endpoint | None = None
     endpoint_status: EndpointState | None = None
+    deadline: datetime.Datetime | None = None

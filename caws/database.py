@@ -6,7 +6,8 @@ import os
 import time
 import datetime
 
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
+X = TypeVar('X')
 
 import sqlalchemy as sa
 from sqlalchemy import Column, Text, Float, Boolean, BigInteger, Integer, DateTime, PrimaryKeyConstraint, Table
@@ -98,6 +99,18 @@ class CawsDatabase:
         time_began = Column(DateTime, nullable=True)
         time_completed = Column(DateTime, nullable=True)
 
+    class Transfer(Base):
+        __tablename__ = "transfer"
+        transfer_id = Column(Text, nullable=False, primary_key=True)
+        caws_task_id = Column(Text, nullable=False)
+        files = Column(Text, nullable=False)
+        size = Column(BigInteger, nullable=False)
+        src_endpoint_id = Column(Text, nullable=False)
+        dest_endpoint_id = Column(Text, nullable=False)
+        transfer_status = Column(Text, nullable=False)
+        time_submit = Column(DateTime, nullable=False)
+        time_completed = Column(DateTime, nullable=True)
+
 class Singleton(type):
     _instances = {}
     def __call__(cls, *args, **kwargs):
@@ -112,7 +125,8 @@ class CawsDatabaseManager(metaclass=Singleton):
                  batching_threshold: int = 10):
         self.db = CawsDatabase(db_url)
         self.started = False
-        self.msg_queue = queue.Queue()
+        self.task_msg_queue = queue.Queue()
+        self.transfer_msg_queue = queue.Queue()
         self.batching_interval = batching_interval
         self.batching_threshold = batching_threshold
 
@@ -133,7 +147,7 @@ class CawsDatabaseManager(metaclass=Singleton):
             self._pusher_thread.join()
             self.started = False
 
-    def send_monitoring_message(self, task: CawsTaskInfo):
+    def send_task_message(self, task: CawsTaskInfo):
         msg = dict()
         msg["caws_task_id"] = task.task_id
         if task.gc_future is not None:
@@ -148,37 +162,55 @@ class CawsDatabaseManager(metaclass=Singleton):
         msg["time_began"] = task.timing_info.get("began")
         msg["time_completed"] = task.timing_info.get("completed")
 
-        self.msg_queue.put(msg)
+        self.task_msg_queue.put(msg)
+
+    def send_transfer_message(self, transfer_info: dict[Any]):
+        self.transfer_msg_queue.put(transfer_info)
+
+    def _get_messages_in_batch(self, msg_queue: "queue.Queue[X]") -> List[X]:
+        messages = []  # type: List[X]
+        start = time.time()
+        while True:
+            if time.time() - start >= self.batching_interval or len(messages) >= self.batching_threshold:
+                break
+            try:
+                x = msg_queue.get(timeout=0.1)
+            except queue.Empty:
+                break
+            else:
+                messages.append(x)
+        return messages
 
     def _database_pushing_loop(self):
-        update_cols = ["funcx_task_id", "endpoint_id", "endpoint_status", "task_status",
+        task_update_cols = ["funcx_task_id", "endpoint_id", "endpoint_status", "task_status",
                        "time_scheduled", "time_began", "time_completed", "caws_task_id"]
+        transfer_update_cols = ["transfer_id", "transfer_status", "time_completed"]
 
-        while not (self._kill_event.is_set() and self.msg_queue.empty()):
-            num_msgs = 0
+        while not self._kill_event.is_set():
+            task_messages = self._get_messages_in_batch(self.task_msg_queue)
             insert_messages = []
             update_messages = []
-
-            start = time.time()
-            while True:
-                if time.time() - start >= self.batching_interval or num_msgs >= self.batching_threshold:
-                    break
-
-                try:
-                    remaining = max(0, self.batching_interval - (time.time() - start))
-                    x = self.msg_queue.get(timeout=remaining)
-                except queue.Empty:
-                    break
+            for x in task_messages:
+                if x["task_status"] == "CREATED":
+                    insert_messages.append(x)
                 else:
-                    num_msgs += 1
-                    if x["task_status"] == "CREATED":
-                        insert_messages.append(x)
-                    else:
-                        update_messages.append(x)
+                    update_messages.append(x)
 
             if len(insert_messages) > 0:
-            # TODO: Surround in try, except, retry, backoff
                 self.db.insert(table="caws_task", messages=insert_messages)
-            
             if len(update_messages) > 0:
-                self.db.update(table="caws_task", columns=update_cols, messages=update_messages)
+                self.db.update(table="caws_task", columns=task_update_cols, messages=update_messages)
+
+            transfer_messages = self._get_messages_in_batch(self.transfer_msg_queue)
+            insert_messages = []
+            update_messages = []
+            for x in transfer_messages:
+                if x["transfer_status"] == "CREATED":
+                    insert_messages.append(x)
+                else:
+                    update_messages.append(x)
+
+            if len(insert_messages) > 0:
+                self.db.insert(table="transfer", messages=insert_messages)
+            if len(update_messages) > 0:
+                self.db.update(table="transfer", columns=update_cols, messages=update_messages)

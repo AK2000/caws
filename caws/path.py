@@ -6,6 +6,7 @@ import uuid
 class CawsPath:
     endpoint: caws.Endpoint
     source_path: str
+    size: int
 
     def __init__(self, src_endpoint: caws.Endpoint, src_path: str, replicate_path: bool = False, isolate: bool = False):
         rel_path = os.path.relpath(src_path, src_endpoint.local_path)
@@ -13,6 +14,13 @@ class CawsPath:
         self.source_path = rel_path
         self.replicate_path = replicate_path
         self.isolate = isolate
+        self.size = self._get_size(self.get_src_local_path())
+
+    def _get_size(self, path):
+        size = 0
+        for root, dirs, files in os.walk(path):
+            size += sum(os.path.getsize(join(root, name)) for name in files)
+        return size
 
     def get_src_endpoint_path(self):
         return os.path.join(self.endpoint.endpoint_path, self.source_path)

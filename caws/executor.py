@@ -89,13 +89,13 @@ class CawsExecutor(object):
         self._transfer_manager.shutdown()
         self.caws_db.shutdown()
 
-    def submit(self, fn: Callable, *args, **kwargs):
+    def submit(self, fn: Callable, *args, deadline=None, resources=None, **kwargs):
         task_id = str(uuid.uuid4())
         name = kwargs.get("name", f"{fn.__module__}.{fn.__qualname__}")
         task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, name)
         task_info.caws_future = CawsFuture(task_info)
         task_info.timing_info["submit"] = datetime.now()
-        self.caws_db.send_monitoring_message(task_info)
+        self.caws_db.send_task_message(task_info)
         
         with self.ready_tasks_lock:
             self.ready_tasks.append(task_info)
@@ -123,7 +123,7 @@ class CawsExecutor(object):
     def _schedule_task(self, task, endpoint):
         task.task_status = TaskStatus.SCHEDULED
         task.timing_info["scheduled"] = datetime.now()
-        self.caws_db.send_monitoring_message(task)
+        self.caws_db.send_task_message(task)
 
         # Replacing input files with paths after Globus transfers
         files = []
@@ -167,7 +167,7 @@ class CawsExecutor(object):
         
         print("Submitting task to endpoint")
         endpoint.submit(task)
-        self.caws_db.send_monitoring_message(task)
+        self.caws_db.send_task_message(task)
 
         # Must be done last to avoid race condition
         task.gc_future.add_done_callback(lambda fut : self._task_complete_callback(task, fut))
@@ -175,7 +175,7 @@ class CawsExecutor(object):
     def _transfer_error(task, endpoint):
         task.task_status = TaskStatus.ERROR
         task.timing_info["completed"] = datetime.now()
-        self.caws_db.send_monitoring_message(task)
+        self.caws_db.send_task_message(task)
         endpoint.discard(task)
         task.caws_future.set_exception(TransferException(task.transfer_record.error))
 
@@ -186,7 +186,7 @@ class CawsExecutor(object):
             task.task_status = TaskStatus.COMPLETED
 
         task.timing_info["completed"] = datetime.now()
-        self.caws_db.send_monitoring_message(task)
+        self.caws_db.send_task_message(task)
         task.endpoint.task_finished(task)
 
         if fut.exception() is not None:
