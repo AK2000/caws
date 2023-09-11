@@ -1,14 +1,9 @@
-from abc import ABC
-import time
-from collections import defaultdict
 from typing import List, Tuple
+from collections import defaultdict
+from abc import ABC
 
-from caws.endpoint import Endpoint
+from caws import Endpoint, CawsTaskInfo
 from caws.predictors.transfer_predictors import TransferPredictor
-from caws.task import CawsTaskInfo
-
-
-FUNCX_LATENCY = 0.1  # Estimated overhead of executing task
 
 class Strategy(ABC):
     """ Strategy interface to provide scheduling decisions
@@ -73,18 +68,26 @@ class Strategy(ABC):
     def __str__(self):
         return type(self).__name__
 
-class FCFS_RoundRobin(Strategy):
-    """ Simplest scheduling strategy made for testing and demonstration. Schedules tasks in a first 
-    come first serve manner, distributes tasks  in a round-robin fashion across endpoints
-    """
+class Schedule:
+    endpoint_to_task: dict[str, List]
+    name_to_endpoint: dict[str, Endpoint]
 
-    def __init__(self, endpoints, transfer_predictor):
-        super().__init__(endpoints, transfer_predictor)
-        self.cur_idx = 0
-        self.endpoints_list = endpoints
-        self.n = len(self.endpoints_list)
+    def __init__(self):
+        self.endpoint_to_task = defaultdict(list)
+        self.name_to_endpoint = dict()
+
+    def __iter__(self):
+        schedule = []
+        for (e, tasks) in self.endpoint_to_task.items():
+            for task in tasks:
+                schedule.append((task, self.name_to_endpoint[e]))
+        return iter(schedule)
     
-    def schedule(self, tasks):
-        schedule = [(t, self.endpoints_list[(self.cur_idx + i) % self.n]) for i,t in enumerate(tasks)]
-        self.cur_idx = (self.cur_idx + len(tasks)) % self.n
-        return schedule, []
+    def add_task(self, endpoint, task):
+        s = Schedule()
+        s.endpoint_to_task = self.endpoint_to_task.copy()
+        s.endpoint_to_task[endpoint.name].append(task)
+        s.name_to_endpoint = self.name_to_endpoint
+        if endpoint.name not in self.name_to_endpoint:
+            s.name_to_endpoint[endpoint.name] = endpoint
+        return s

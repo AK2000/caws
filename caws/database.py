@@ -112,6 +112,17 @@ class CawsDatabase:
         time_completed = Column(DateTime, nullable=True)
         bytes_transferred = Column(BigInteger, nullable=True)
 
+    class TaskFeatures(Base):
+        __tablename__ = "features"
+        caws_task_id = Column(Text, nullable=False)
+        feature_id = Column(Integer, nullable=False)
+        feature_type = Column(Text, nullable=False)
+        value = Column(Text, nullable=False)
+
+        __table_args__ = (
+            PrimaryKeyConstraint('caws_task_id', 'feature_id'),
+        )
+
 class Singleton(type):
     _instances = {}
     def __call__(cls, *args, **kwargs):

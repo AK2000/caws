@@ -171,7 +171,10 @@ class Predictor:
             caws_df = func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
             self.endpoints[endpoint] = self.EndpointModel(self, tasks, resources, energy, caws_df)
 
-    def predict(self, endpoint, func_name):
+    def predict(self, endpoint, task_info):
+        pass
+
+    def static_power(self, endpoint):
         pass
 
 def split(df, columns):

@@ -48,3 +48,17 @@ class CawsTaskInfo:
     endpoint: Endpoint | None = None
     endpoint_status: EndpointState | None = None
     deadline: datetime.Datetime | None = None
+
+@dataclass
+class CawsTask:
+    func: Callable
+    features: list[Callable] | None = None
+
+    def __call__(*args, **kwargs):
+        func(*args, **kwargs)
+
+    def extract_features(*args, **kwargs):
+        return [f(*args, **kwargs) for f in features]
+
+def caws_task(func = None, features = None):
+    pass

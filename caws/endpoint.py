@@ -50,13 +50,16 @@ class Endpoint:
                  transfer_id=None,
                  endpoint_path:str = "~/", # TODO: Figure out resolve use for default path
                  local_path:str = None,
-                 state=EndpointState.COLD,
                  monitoring_avail: bool = False,
                  monitor_url=None,
                  monitor_carbon: bool = False,
                  lat=None,
                  lon=None,
-                 zone_id=None):
+                 zone_id=None,
+                 slots_per_block=1,
+                 min_blocks=0,
+                 max_blocks=1,
+                 parallelism=0.5):
                  
         self.name = name
         
@@ -70,8 +73,6 @@ class Endpoint:
         self.endpoint_path = endpoint_path
         self.local_path = local_path if local_path is not None else endpoint_path
 
-
-        self.state = state
         self.monitoring_avail = monitoring_avail
         self.monitor_url = monitor_url
         if self.monitoring_avail:
@@ -114,6 +115,19 @@ class Endpoint:
                     self.lon = response.location.longitude
 
                 self.electricitymaps_header = { 'auth-token': os.environ["ELECTRICITY_MAPS_TOKEN"] }
+        
+        self.slots_per_block = slots_per_block
+        self.min_blocks = min_blocks
+        self.max_blocks = max_blocks
+        self.parallelism = parallelism
+
+        self.active_slots = self.slots_per_block * self.min_blocks
+        self.active_tasks = 0
+
+        if self.active_slots > 0:
+            self.state = EndpointState.WARM
+        else:
+            self.state = EndpointState.COLD
 
     def collect_monitoring_info(self, prev_timestamp = None):
         if not self.monitoring_avail:
@@ -185,10 +199,12 @@ class Endpoint:
         task.endpoint = self
         task.gc_future = self.gce.submit(task.func, *task.task_args, **task.task_kwargs)
         self.running_tasks.add(task.task_id)
+        self.active_tasks += 1
 
     def task_finished(self, task):
         self.running_tasks.remove(task.task_id)
-        
+        self.active_tasks -= 1
+
     def poll(self) -> EndpointState:
         status = client.get_endpoint_status(self.compute_endpoint_id)
         self.status = status

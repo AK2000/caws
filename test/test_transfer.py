@@ -3,7 +3,7 @@ import time
 import os
 
 import caws
-from caws.strategy import FCFS_RoundRobin
+from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
 from caws.transfer import TransferManager, TransferStatus
 from caws.path import CawsPath

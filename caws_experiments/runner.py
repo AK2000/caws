@@ -9,7 +9,7 @@ from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
 
 import caws
-from caws.strategy import FCFS_RoundRobin
+from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
 
 @click.group()

@@ -3,7 +3,7 @@ import concurrent.futures
 import time
 
 import caws
-from caws.strategy import FCFS_RoundRobin
+from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
 
 def sleep(sec: float):

@@ -14,7 +14,7 @@ import inspect
 
 from caws.utils import create_output_dir_wrapper
 from caws.transfer import TransferManager, TransferException
-from caws.strategy import Strategy
+from caws.strategy.base import Strategy
 from caws.task import CawsTaskInfo, TaskStatus, CawsFuture
 from caws.endpoint import Endpoint, EndpointState
 from caws.predictors.transfer_predictors import TransferPredictor
