@@ -11,7 +11,6 @@ from caws.path import CawsPath
 from util_funcs import transfer_file
 
 def test_transfer_manager():
-    source_path = "test_transfer.txt"
     source_name = "caws-dev_ep1"
     source_compute_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
     source_transfer_id = "02ca3fe4-0dee-11ee-bdcc-a3018385fcef"
@@ -22,12 +21,14 @@ def test_transfer_manager():
 
     source = caws.Endpoint(source_name,
                            source_compute_id,
-                           local_path="/D/UChicago/globus/",
+                           endpoint_path="/D/UChicago/src/research",
+                           local_path="/mnt/d/UChicago/src/research",
                            transfer_id=source_transfer_id,
                            monitoring_avail=True)
 
     destination = caws.Endpoint(dest_name,
                                 dest_compute_id,
+                                endpoint_path="/home/alokvk2/",
                                 transfer_id=dest_transfer_id,
                                 monitoring_avail=True)
 
@@ -41,18 +42,29 @@ def test_transfer_manager():
     transfer_manager.start()
     assert transfer_manager.started
 
-    file_path = CawsPath(source, source_path)
-    transfer_record = transfer_manager.transfer([file_path,],
+    file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
+    caws_path = CawsPath(source, file_path)
+    caws_path_isolated = CawsPath(source, file_path, isolate=True)
+    transfer_record = transfer_manager.transfer([caws_path,],
+                              destination,
+                              "test_transfer",
+                              success_callback,
+                              failure_callback)
+    transfer_record_2 = transfer_manager.transfer([caws_path_isolated,],
                               destination,
                               "test_transfer",
                               success_callback,
                               failure_callback)
 
+    transfer_manager.submit_pending_transfers()
+    assert len(transfer_manager.pending_transfers) == 0, "All transfers not submitted"
+    assert transfer_record.transfer_ids[0] == transfer_record_2.transfer_ids[0], "Transfers not batched correctly"
+
     transfer_manager.shutdown()
     assert not transfer_manager.started
     assert transfer_record.status == TransferStatus.COMPLETED
 
-def test_executor_transfer():
+def test_transfer_executor():
     source_path = "test_transfer.txt"
     source_name = "caws-dev_ep1"
     source_compute_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
@@ -85,4 +97,4 @@ def test_executor_transfer():
         assert fut.result()
 
 if __name__ == "__main__":
-    test_executor_transfer()
+    test_transfer_executor()

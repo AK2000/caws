@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Sequence, Optional, TYPE_CHECKING
+from typing import Any, Callable, Sequence, Optional, List, TYPE_CHECKING
 from concurrent.futures import Future
 from uuid import uuid4
 from datetime import datetime
@@ -10,12 +10,13 @@ from datetime import datetime
 from globus_compute_sdk import Client
 from globus_compute_sdk.sdk.asynchronous.compute_future import ComputeFuture
 
-from caws.utils import client
+from caws.utils import client, mainify
 
 if TYPE_CHECKING:
     from caws.endpoint import Endpoint, EndpointState
     from caws.executor import CawsExecutor
     from caws.transfer import TransferRecord
+    from caws.features import CawsTaskFeature, CawsFeatureType
 
 class TaskStatus(IntEnum):
     CREATED: int = 0
@@ -48,17 +49,35 @@ class CawsTaskInfo:
     endpoint: Endpoint | None = None
     endpoint_status: EndpointState | None = None
     deadline: datetime.Datetime | None = None
+    features: List[Any, CawsTaskFeature] = field(default_factory=list)
 
 @dataclass
 class CawsTask:
     func: Callable
-    features: list[Callable] | None = None
+    features: List[CawsTaskFeature]
 
     def __call__(*args, **kwargs):
-        func(*args, **kwargs)
+        self.func(*args, **kwargs)
 
-    def extract_features(*args, **kwargs):
-        return [f(*args, **kwargs) for f in features]
+    def add_feature(self, feature: List[CawsTaskFeature]):
+        self.features.append(feature)
 
-def caws_task(func = None, features = None):
-    pass
+    def extract_features(self, *args, **kwargs):
+        return [(f(self.func, *args, **kwargs), t) for (f, t) in self.features]
+
+    def mainify(self):
+        self.func = mainify(func)
+    
+    def extract_func(self):
+        return self.func
+
+    
+
+def caws_task(func=None, features=[]):
+    def decorator(func):
+        return CawsTask(func, features)
+    
+    if func is not None:
+        return decorator(func)
+
+    return decorator

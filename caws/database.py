@@ -92,6 +92,7 @@ class CawsDatabase:
         funcx_task_id = Column(Text, nullable=True)
         func_name = Column(Text, nullable=False)
         endpoint_id = Column(Text, nullable=True)
+        transfer_endpoint_id = Column(Text, nullable=True)
         endpoint_status = Column(Text, nullable=True)
         task_status = Column(Text, nullable=False)
         time_submit = Column(DateTime, nullable=False)
@@ -102,9 +103,6 @@ class CawsDatabase:
     class Transfer(Base):
         __tablename__ = "transfer"
         transfer_id = Column(Text, nullable=False, primary_key=True)
-        caws_task_id = Column(Text, nullable=False)
-        files = Column(Text, nullable=False)
-        size = Column(BigInteger, nullable=False)
         src_endpoint_id = Column(Text, nullable=False)
         dest_endpoint_id = Column(Text, nullable=False)
         transfer_status = Column(Text, nullable=False)
@@ -139,6 +137,7 @@ class CawsDatabaseManager(metaclass=Singleton):
         self.started = False
         self.task_msg_queue = queue.Queue()
         self.transfer_msg_queue = queue.Queue()
+        self.feature_msg_queue = queue.Queue()
         self.batching_interval = batching_interval
         self.batching_threshold = batching_threshold
 
@@ -165,6 +164,7 @@ class CawsDatabaseManager(metaclass=Singleton):
         if task.gc_future is not None:
             msg["funcx_task_id"] = task.gc_future.task_id
             msg["endpoint_id"] = task.endpoint.compute_endpoint_id
+            msg["transfer_endpoint_id"] = task.endpoint.transfer_endpoint_id
             msg["endpoint_status"] = task.endpoint_status.name
 
         msg["func_name"] = task.function_name
@@ -178,6 +178,9 @@ class CawsDatabaseManager(metaclass=Singleton):
 
     def send_transfer_message(self, transfer_info: dict[Any]):
         self.transfer_msg_queue.put(transfer_info)
+
+    def send_feature_message(self, feature_info: dict[Any]):
+        self.feature_msg_queue.put(feature_info)
 
     def _get_messages_in_batch(self, msg_queue: "queue.Queue[X]") -> List[X]:
         messages = []  # type: List[X]
@@ -194,7 +197,7 @@ class CawsDatabaseManager(metaclass=Singleton):
         return messages
 
     def _database_pushing_loop(self):
-        task_update_cols = ["funcx_task_id", "endpoint_id", "endpoint_status", "task_status",
+        task_update_cols = ["funcx_task_id", "endpoint_id", "transfer_endpoint_id", "endpoint_status", "task_status",
                        "time_scheduled", "time_began", "time_completed", "caws_task_id"]
         transfer_update_cols = ["transfer_id", "transfer_status", "time_completed", "bytes_transferred"]
 
@@ -225,4 +228,9 @@ class CawsDatabaseManager(metaclass=Singleton):
             if len(insert_messages) > 0:
                 self.db.insert(table="transfer", messages=insert_messages)
             if len(update_messages) > 0:
-                self.db.update(table="transfer", columns=update_cols, messages=update_messages)
+                self.db.update(table="transfer", columns=transfer_update_cols, messages=update_messages)
+
+            
+            feature_messages = self._get_messages_in_batch(self.feature_msg_queue)
+            if len(feature_messages) > 0:
+                self.db.insert(table="features", messages=feature_messages)

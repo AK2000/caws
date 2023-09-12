@@ -15,7 +15,7 @@ import inspect
 from caws.utils import create_output_dir_wrapper
 from caws.transfer import TransferManager, TransferException
 from caws.strategy.base import Strategy
-from caws.task import CawsTaskInfo, TaskStatus, CawsFuture
+from caws.task import CawsTaskInfo, TaskStatus, CawsFuture, CawsTask
 from caws.endpoint import Endpoint, EndpointState
 from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
@@ -39,6 +39,7 @@ class CawsExecutor(object):
     _endpoint_watchdog_sleep: float = 5
     _task_scheduling_sleep: float = 0.5
 
+    scheduling_lock = Lock() # Use to manually batch tasks
     ready_tasks_lock = Lock()
     ready_tasks: list[CawsTaskInfo] = []
 
@@ -51,15 +52,14 @@ class CawsExecutor(object):
         
         self.endpoints = endpoints
         self.strategy = strategy
-        self._transfer_manager = TransferManager(log_level=logging.DEBUG)
-
         self._task_watchdog_sleep = task_watchdog_sleep
         self._endpoint_watchdog_sleep = endpoint_watchdog_sleep
 
         if caws_database_url is None:
             caws_database_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
-
         self.caws_db = CawsDatabaseManager(caws_database_url)
+
+        self._transfer_manager = TransferManager(caws_db=self.caws_db, log_level=logging.DEBUG)
     
     def __enter__(self):
         self.start()
@@ -90,12 +90,26 @@ class CawsExecutor(object):
         self.caws_db.shutdown()
 
     def submit(self, fn: Callable, *args, deadline=None, resources=None, **kwargs):
+        if isinstance(fn, CawsTask):
+            features = fn.extract_features(*args, **kwargs)
+            fn = fn.extract_func()
+        else:
+            features = []
+
         task_id = str(uuid.uuid4())
         name = kwargs.get("name", f"{fn.__module__}.{fn.__qualname__}")
-        task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, name)
+        task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, name, features=features)
         task_info.caws_future = CawsFuture(task_info)
         task_info.timing_info["submit"] = datetime.now()
         self.caws_db.send_task_message(task_info)
+
+        for i, (value, feature_type) in enumerate(features):
+            self.caws_db.send_feature_message({
+                    "caws_task_id": task_id,
+                    "feature_id": i,
+                    "feature_type": feature_type.name,
+                    "value": str(value)
+            })
         
         with self.ready_tasks_lock:
             self.ready_tasks.append(task_info)
@@ -107,15 +121,17 @@ class CawsExecutor(object):
 
         self.tasks_scheduling = []
         while not kill_event.is_set():
-            with self.ready_tasks_lock:
-                self.tasks_scheduling.extend(self.ready_tasks)
-                self.ready_tasks = []
+            with self.scheduling_lock:
+                with self.ready_tasks_lock:
+                    self.tasks_scheduling.extend(self.ready_tasks)
+                    self.ready_tasks = []
             
             scheduling_decisions, self.tasks_scheduling = self.strategy.schedule(self.tasks_scheduling)
 
             for task, endpoint in scheduling_decisions:
                 print("Scheduling tasks")
                 self._schedule_task(task, endpoint)
+            self._transfer_manager.submit_pending_transfers()
 
             if len(scheduling_decisions) == 0:
                 time.sleep(self._task_scheduling_sleep)

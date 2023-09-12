@@ -10,7 +10,7 @@ import numpy as np
 from queue import Queue
 from enum import IntEnum
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 import json
 
@@ -36,12 +36,11 @@ class TransferStatus(IntEnum):
 @dataclass
 class TransferRecord:
     task_id: int
-    transfer_ids: list[str]
     remaining: int
     status: TransferStatus
+    transfer_ids: list = field(default_factory=list)
     callback: None | Callable = None
     fail_callback: None | Callable = None
-    callback_thread: None | int = None
     error: None | str = None
 
 class TransferManager(object):
@@ -53,6 +52,8 @@ class TransferManager(object):
 
         # Track pending transfers
         self._next = 0
+        self._round = 0
+        self.pending_transfers = {}
         self.active_transfers = {}
 
         self._polling_interval = 1
@@ -126,6 +127,15 @@ class TransferManager(object):
         self._tracker.join()
         self.started = False
 
+    def create_transfer(self, src_endpoint_id, dst_endpoint_id):
+        tdata = globus_sdk.TransferData(source_endpoint=src_endpoint_id,
+                                            destination_endpoint=dst_endpoint_id,
+                                            label='Caws Transfer {}'
+                                            .format(self._round),
+                                            sync_level=self.sync_level)
+        return tdata
+        
+
     def transfer(self, 
                  files, 
                  dst,
@@ -133,7 +143,7 @@ class TransferManager(object):
                  callback=None,
                  failed_callback=None):
 
-        task_record = TransferRecord(self._next, [], 0, TransferStatus.CREATING, callback, failed_callback)
+        task_record = TransferRecord(self._next, 0, TransferStatus.CREATING, callback=callback, fail_callback=failed_callback)
         self._next += 1 #TODO: Do I need to worry about thread safety here?
 
         files_by_src = defaultdict(list)
@@ -151,18 +161,25 @@ class TransferManager(object):
 
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
 
-            tdata = globus_sdk.TransferData(source_endpoint=src.transfer_endpoint_id,
-                                            destination_endpoint=dst.transfer_endpoint_id,
-                                            label='FuncX Transfer {} - {} of {}'
-                                            .format(self._next + 1, i, n),
-                                            sync_level=self.sync_level)
+            if (src.transfer_endpoint_id, dst.transfer_endpoint_id) not in self.pending_transfers:
+                tdata = self.create_transfer(src.transfer_endpoint_id, dst.transfer_endpoint_id)
+                self.pending_transfers[(src.transfer_endpoint_id, dst.transfer_endpoint_id)] = (tdata, [task_record])
+            else:
+                tdata, _ = self.pending_transfers[(src.transfer_endpoint_id, dst.transfer_endpoint_id)]
+                self.pending_transfers[(src.transfer_endpoint_id, dst.transfer_endpoint_id)][1].append(task_record)
+            
             size = 0
-            file_paths = []
             for src_path in files:
                 size += src_path.size
-                file_paths.append(src_path.get_src_endpoint_path())
                 tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_id))
+            task_record.remaining += 1
+            
+        return task_record
 
+    def submit_pending_transfers(self):
+        all_task_records = []
+        n = len(self.pending_transfers)
+        for i, ((src_endpoint_id, dst_endpoint_id), (tdata, task_records)) in enumerate(self.pending_transfers.items(), start=1):
             try:
                 res = self.transfer_client.submit_transfer(tdata)
             except globus_sdk.TransferAPIError as err:
@@ -176,49 +193,58 @@ class TransferManager(object):
                     self.transfer_client = self.login_and_get_transfer_client(scopes=self.scopes)
                     res = self.transfer_client.submit_transfer(tdata)
                 else:
+                    for task_record in task_records:
+                        task_record.status = TransferStatus.PENDING
+                        if task_record.failed_callback is not None:
+                            task_record.failed_callback()
+                        task_record.status = TransferStatus.FAILED
+                    continue
+                    
+            if res['code'] != 'Accepted':
+                for task_record in task_records:
                     task_record.status = TransferStatus.PENDING
                     if task_record.failed_callback is not None:
                         task_record.failed_callback()
                     task_record.status = TransferStatus.FAILED
-                    
+                continue
+
             
-
-            if res['code'] != 'Accepted':
-                raise ValueError('Transfer not accepted')
-
-            task_record.remaining += 1
             self.active_transfers[res['task_id']] = {
-                'name': f"{task_id} {i}/{n}",
+                'name': f"{self._round} {i}/{n}",
                 'transfer_id': res["task_id"],
-                'caws_task_id': task_id, 
-                'src_endpoint_id': src.compute_endpoint_id,
-                'dest_endpoint_id': dst.compute_endpoint_id,
-                'files': json.dumps(file_paths),
-                'size': size,
-                'time_submit': datetime.now(),
+                'src_endpoint_id': src_endpoint_id,
+                'dest_endpoint_id': dst_endpoint_id,
                 'transfer_status': "CREATED",
-                'task_record': task_record
+                'time_submit': datetime.now(),
+                'task_records': task_records
             }
-            task_record.transfer_ids.append(res['task_id'])
             logger.debug(f"Submited Transfer to Globus, task id: {res['task_id']}")
 
+            for task_record in task_records:
+                task_record.transfer_ids.append(res['task_id'])
+
+            all_task_records.extend(task_records)
+
             if self.caws_db:
-                self.caws_db.send_transfer_message(task_record)
-        
-        task_record.status = TransferStatus.PENDING
-        if task_record.remaining == 0:
-            if not task_record.error:
-                if task_record.callback is not None:
-                    task_record.callback()
-                task_record.status = TransferStatus.COMPLETED
+                self.caws_db.send_transfer_message(self.active_transfers[res['task_id']])
+
+        for task_record in all_task_records:
+            # Ensures extactly once semantics for callback
+            task_record.status = TransferStatus.PENDING
+            if task_record.remaining == 0:
+                if not task_record.error:
+                    if task_record.callback is not None:
+                        task_record.callback()
+                    task_record.status = TransferStatus.COMPLETED
+                else:
+                    if task_record.failed_callback is not None:
+                        task_record.failed_callback()
+                    task_record.status = TransferStatus.FAILED
             else:
-                if task_record.failed_callback is not None:
-                    task_record.failed_callback()
-                task_record.status = TransferStatus.FAILED
-        else:
-            task_record.status = TransferStatus.EXECUTING
-            
-        return task_record
+                task_record.status = TransferStatus.EXECUTING
+
+        self.pending_transfers = {}
+        self._round += 1
 
     def _update_transfer_record(self, task_record, status):
         if status['status'] == 'FAILED':
@@ -237,11 +263,11 @@ class TransferManager(object):
         logger.debug("Transfer task currently executing")
         if task_record.remaining == 0:
             if task_record.error:
+                # TODO: Should we fail as soon as possible?
                 logger.debug("Transfer failed")
                 task_record.status = TransferStatus.FAILED
                 task_record.failed_callback(task_record)
             else:
-                # TODO: Should we fail as soon as possible?
                 logger.debug("Transfer completed successfully")
                 task_record.status = TransferStatus.COMPLETED
                 logger.debug("Executing callback")
@@ -276,7 +302,9 @@ class TransferManager(object):
                     logger.info('Globus transfer {} finished in time {}'
                                 .format(name, info['time_completed'] - info['time_submit']))
 
-                self._update_transfer_record(info["task_record"], status)
+                for task_record in info["task_records"]:
+                    self._update_transfer_record(task_record, status)
+
                 if self.caws_db:
                     self.caws_db.send_transfer_message(info)
                 del self.active_transfers[transfer_id]
