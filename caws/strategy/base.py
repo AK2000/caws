@@ -1,5 +1,6 @@
 from typing import List, Tuple
 from collections import defaultdict
+import copy
 from abc import ABC
 
 from caws import Endpoint, CawsTaskInfo
@@ -85,7 +86,7 @@ class Schedule:
     
     def add_task(self, endpoint, task):
         s = Schedule()
-        s.endpoint_to_task = self.endpoint_to_task.copy()
+        s.endpoint_to_task = copy.deepcopy(self.endpoint_to_task)
         s.endpoint_to_task[endpoint.name].append(task)
         s.name_to_endpoint = self.name_to_endpoint
         if endpoint.name not in self.name_to_endpoint:

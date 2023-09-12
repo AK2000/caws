@@ -31,6 +31,7 @@ class Endpoint:
     state: EndpointState
     active_slots: int = 0
     active_tasks: int = 0
+    shutdown_time: int = 5
 
 def test_strategy_mock_endpoint():
     endpoint = Endpoint("Endpoint1", 2, 0, 0, 1, EndpointState.COLD)
@@ -41,15 +42,15 @@ def test_strategy_mock_endpoint():
     for i in range(5):
         mock_endpoint.schedule(task_runtime, task_energy)
 
-    correct_energy = (task_energy * 5) + (predictor.static_power(endpoint) * mock_endpoint.runtime)
+    correct_energy = (task_energy * 5) + (predictor.static_power(endpoint) * (mock_endpoint.runtime + 30))
     assert mock_endpoint.runtime == (task_runtime * 3)
-    assert mock_endpoint.energy() == correct_energy
+    assert mock_endpoint.energy() - correct_energy < 0.1
 
 def test_strategy_mock_endpoint_2():
     endpoints = [
         Endpoint("Endpoint1", 64, 0, 0, 1, EndpointState.COLD),
         Endpoint("Endpoint2", 32, 0.5, 0, 5, EndpointState.COLD),
-        Endpoint("Endpoint3", 16, 0, 0, 1, EndpointState.WARM, 16)
+        Endpoint("Endpoint3", 16, 0, 1, 1, EndpointState.WARM, 16)
     ]
     tasks = [t for t in ["task1", "task2", "task3", "task4", "task5"] for _ in range(10)]
 

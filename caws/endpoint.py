@@ -59,7 +59,8 @@ class Endpoint:
                  slots_per_block=1,
                  min_blocks=0,
                  max_blocks=1,
-                 parallelism=0.5):
+                 parallelism=0.5,
+                 shutdown_time=10):
                  
         self.name = name
         

@@ -11,6 +11,7 @@ class MockEndpoint:
         self.min_blocks = endpoint.min_blocks
         self.max_blocks = endpoint.max_blocks
         self.parallelism = endpoint.parallelism
+        self.shutdown_time = endpoint.shutdown_time
 
         self.active_blocks = self.active_slots / self.slots_per_block
 
@@ -64,19 +65,32 @@ class MockEndpoint:
         
         total_task_energy = self.total_task_energy + task_energy
         total_energy = total_task_energy + (runtime * active_blocks * self.static_power)
-
+        total_energy += (active_blocks - self.min_blocks) * self.shutdown_time * self.static_power
         return runtime, total_energy
 
     def energy(self):
         energy = self.total_task_energy + (self.runtime * self.active_blocks * self.static_power)
+        energy += (self.active_blocks - self.min_blocks) * self.shutdown_time * self.static_power
         return energy
+
+def identity(tasks_by_runtime):
+    return [t[1] for t in tasks_by_runtime]
+
+def longest_processing_time(tasks_by_runtime):
+    tasks_by_runtime = sorted(tasks_by_runtime, reverse=True)
+    return [t[1] for t in tasks_by_runtime]
+
+def shortest_processing_time(tasks_by_runtime):
+    tasks_by_runtime = sorted(tasks_by_runtime)
+    return [t[1] for t in tasks_by_runtime]
 
 class MHRA(Strategy):
 
-    def __init__(self, endpoints, predictor, alpha=1.0):
+    def __init__(self, endpoints, predictor, alpha=1.0, heuristics=[identity, longest_processing_time, shortest_processing_time]):
         self.cur_idx = 0
         self.endpoints = endpoints
         self.predictor = predictor
+        self.heuristics = heuristics
 
         self.alpha = alpha
 
@@ -103,55 +117,59 @@ class MHRA(Strategy):
         print(f"\t{mock_endpoint.energy()} J")
 
         # TODO: Implement other heuristics
-        tasks_by_runtime = sorted(zip(task_runtimes, tasks), reverse=True)
-        return [t[1] for t in tasks_by_runtime]
+        tasks_by_runtime = zip(task_runtimes, tasks)
+        return list(tasks_by_runtime)
 
     def schedule(self, tasks):
-        tasks = self.preprocess(tasks)
-        mock_endpoints = [MockEndpoint(e, self.predictor.static_power(e)) for e in self.endpoints]
-        best_schedule = Schedule()
-        best_cost = 0
-        best_runtime = 0
-        best_energy = 0
+        tasks_by_runtime = self.preprocess(tasks)
+        best_cost = float("inf")
+        for heuristic in self.heuristics:
+            tasks = heuristic(tasks_by_runtime)            
+            
+            mock_endpoints = [MockEndpoint(e, self.predictor.static_power(e)) for e in self.endpoints]
+            cur_schedule = Schedule()
+            cur_cost = 0
 
-        for task in tasks:
-            mock_endpoint = mock_endpoints[0]
-            task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
-            endpoint_runtime, endpoint_energy = mock_endpoint.predict(task_runtime, task_energy)
-            makespan_runtime = max(*[e.runtime for e in mock_endpoints[1:]], endpoint_runtime)
-            makespan_energy = sum([e.energy() for e in mock_endpoints[1:]]+[endpoint_energy])
-
-            best_endpoint = mock_endpoint
-            new_schedule = best_schedule.add_task(mock_endpoint.endpoint, task)
-            new_cost = self.objective(makespan_runtime, makespan_energy)
-            best_task_runtime = task_runtime
-            best_task_energy = task_energy
-            best_runtime = makespan_runtime
-            best_energy = makespan_energy
-
-            for i, mock_endpoint in enumerate(mock_endpoints[1:], start=1):
+            for task in tasks:
+                mock_endpoint = mock_endpoints[0]
                 task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
                 endpoint_runtime, endpoint_energy = mock_endpoint.predict(task_runtime, task_energy)
-                makespan_runtime = max(*[e.runtime for e in mock_endpoints[:i]],
-                                       *[e.runtime for e in mock_endpoints[i+1:]],
-                                       endpoint_runtime)
-                makespan_energy = sum([e.energy() for e in mock_endpoints[:i]] \
-                                      + [e.energy() for e in mock_endpoints[i+1:]] \
-                                      + [endpoint_energy])
+                makespan_runtime = max(*[e.runtime for e in mock_endpoints[1:]], endpoint_runtime)
+                makespan_energy = sum([e.energy() for e in mock_endpoints[1:]]+[endpoint_energy])
 
-                cost = self.objective(makespan_runtime, makespan_energy)
-                if cost < new_cost:
-                    best_endpoint = mock_endpoint
-                    new_schedule = best_schedule.add_task(mock_endpoint.endpoint, task)
-                    new_cost = cost
-                    best_task_runtime = task_runtime
-                    best_task_energy = task_energy
-                    best_runtime = makespan_runtime
-                    best_energy = makespan_energy
+                best_endpoint = mock_endpoint
+                new_schedule = cur_schedule.add_task(mock_endpoint.endpoint, task)
+                new_cost = self.objective(makespan_runtime, makespan_energy)
+                best_task_runtime = task_runtime
+                best_task_energy = task_energy
 
-            best_schedule = new_schedule
-            best_cost = new_cost
-            best_endpoint.schedule(best_task_runtime, best_task_energy)
+                for i, mock_endpoint in enumerate(mock_endpoints[1:], start=1):
+                    task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
+                    endpoint_runtime, endpoint_energy = mock_endpoint.predict(task_runtime, task_energy)
+                    makespan_runtime = max(*[e.runtime for e in mock_endpoints[:i]],
+                                        *[e.runtime for e in mock_endpoints[i+1:]],
+                                        endpoint_runtime)
+                    makespan_energy = sum([e.energy() for e in mock_endpoints[:i]] \
+                                        + [e.energy() for e in mock_endpoints[i+1:]] \
+                                        + [endpoint_energy])
+
+                    cost = self.objective(makespan_runtime, makespan_energy)
+                    if cost < new_cost:
+                        best_endpoint = mock_endpoint
+                        new_schedule = cur_schedule.add_task(mock_endpoint.endpoint, task)
+                        new_cost = cost
+                        best_task_runtime = task_runtime
+                        best_task_energy = task_energy
+
+                cur_schedule = new_schedule
+                cur_cost = new_cost
+                best_endpoint.schedule(best_task_runtime, best_task_energy)
+
+            if cur_cost < best_cost:
+                best_schedule = cur_schedule
+                best_cost = cur_cost
+                best_runtime = max([e.runtime for e in mock_endpoints])
+                best_energy = sum([e.energy() for e in mock_endpoints])
 
         print(f"After scheduling, tasks would take: ")
         print(f"\t{best_runtime} s")
