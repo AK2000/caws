@@ -1,3 +1,6 @@
+from caws.task import caws_task
+from caws.features import ArgAttrFeature
+
 def thumbnailer(img_path, width, height, *, _caws_output_dir):
     import datetime
     import io
@@ -33,3 +36,5 @@ def thumbnailer(img_path, width, height, *, _caws_output_dir):
                 'compute_time': process_time
             }
     }
+
+thumbnailer = caws_task(thumbnailer, features=[ArgAttrFeature("size")])

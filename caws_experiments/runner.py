@@ -4,13 +4,14 @@ import concurrent.futures
 import time
 
 import click
-
-from caws_experiments.benchmarks import utils as benchmark_utils
-from caws_experiments import utils
+import numpy as np
 
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.transfer_predictors import TransferPredictor
+
+from caws_experiments.benchmarks import utils as benchmark_utils
+from caws_experiments import utils
 
 @click.group()
 def cli():
@@ -19,7 +20,7 @@ def cli():
 @cli.command()
 @click.argument("benchmark_name", type=str)
 @click.option(
-    "endpoint_name", "-e,"
+    "endpoint_name", "-e",
     required=True,
     type=str, 
     help="Name of endpoint in config file"
@@ -27,7 +28,7 @@ def cli():
 @click.option(
     "--benchmark-input-size", "-s",
     required=True,
-    type=click.Choice(["test", "small", "large"])
+    type=click.Choice(["test", "small", "large"]),
     help="Size of the benchmark to run (test, small, or large)"
 )
 @click.option(
@@ -64,7 +65,7 @@ def benchmark(benchmark_name,
     benchmark = benchmark_utils.import_benchmark(benchmark_name)
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
-    func = benchmark_utils.mainify(benchmark.func)
+    benchmark.func.mainify()
 
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
@@ -76,7 +77,7 @@ def benchmark(benchmark_name,
         
         futures = []
         for _ in range(ntasks):
-            futures.append(executor.submit(func, *args, **kwargs))
+            futures.append(executor.submit(benchmark.func, *args, **kwargs))
         concurrent.futures.wait(futures)
 
         for future in futures:
@@ -93,7 +94,7 @@ def benchmark(benchmark_name,
 @click.option(
     "--benchmark-input-size", "-s",
     required=True,
-    type=click.Choice(["test", "small", "large"])
+    type=click.Choice(["test", "small", "large"]),
     help="Size of the benchmark to run (test, small, or large)"
 )
 @click.option(
@@ -103,7 +104,7 @@ def benchmark(benchmark_name,
     help="Location of data directory for benchmarks",
 )
 @click.option(
-    "--ntasks", "-n",
+    "--max_tasks", "-m",
     type=int,
     default=1,
     help="Number of each task to run",
@@ -127,7 +128,7 @@ def profile(endpoint_name,
             config,
             benchmark_input_size,
             data_dir,
-            ntasks,
+            max_tasks,
             warmup,
             include,
             exclude):
@@ -135,15 +136,17 @@ def profile(endpoint_name,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video"]
+        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matrix_multiplication"]
     
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     benchmarks = []
     for benchmark_name in benchmarks:
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
         args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
-        func = benchmark_utils.mainify(benchmark.func)
-        benchmarks.append((func, args, kwargs))
+        benchmark.func.mainify()
+        benchmarks.append((benchmark.func, args, kwargs))
+
+    task_range = np.logspace(0, np.log2(max_tasks), num=int(np.log2(max_tasks))+1, base=2, dtype='int', endpoint=True)
 
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
@@ -153,14 +156,19 @@ def profile(endpoint_name,
             fut = executor.submit(time.sleep, 5)
             fut.result()
         
-        futures = []
-        for func, args, kwargs in benchmarks:
-            for _ in range(ntasks):
-                futures.append(executor.submit(func, *args, **kwargs))
-        concurrent.futures.wait(futures)
 
-        for future in futures:
-            future.result()
+        for ntasks in task_range:
+            futures = []
+            with executor.scheduling_lock: # Ensure all tasks are batched together
+                for func, args, kwargs in benchmarks:
+                    for _ in range(ntasks):
+                        futures.append(executor.submit(func, *args, **kwargs))
+            concurrent.futures.wait(futures)
+
+            for future in futures:
+                future.result()
+
+        time.sleep(30) # Rate limit so each new benchmark is a cold start 
 
 if __name__ == "__main__":
     cli()

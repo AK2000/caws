@@ -1,3 +1,6 @@
+from caws.task import caws_task
+from caws.features import ArgAttrFeature
+
 def compression(directory_path, *, _caws_output_dir):
     import os
     import datetime
@@ -33,3 +36,5 @@ def compression(directory_path, *, _caws_output_dir):
                 'compute_time': process_time
             }
         }
+
+compression = caws_task(compression, features=[ArgAttrFeature("size")])

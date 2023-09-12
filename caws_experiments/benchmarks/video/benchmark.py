@@ -1,3 +1,6 @@
+from caws.task import caws_task
+from caws.features import ArgFeature, ArgAttrFeature, CawsFeatureType
+
 def video_processing(download_path, duration, op, *, _caws_output_dir, watermark_path=None):
     import datetime
     import os
@@ -55,3 +58,5 @@ def video_processing(download_path, duration, op, *, _caws_output_dir, watermark
                 'compute_time': process_time
             }
         }
+features = [ArgAttrFeature("size"), ArgFeature(arg_name="duration"), ArgFeature(arg_name="op", feature_type=CawsFeatureType.CATEGORICAL)]
+video_processing = caws_task(video_processing, features=features)

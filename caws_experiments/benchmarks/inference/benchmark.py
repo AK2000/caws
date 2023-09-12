@@ -1,3 +1,5 @@
+from caws.task import caws_task
+
 idx2label = None
 model = None
 
@@ -51,3 +53,5 @@ def image_recognition(model_path, image_path, class_index_path):
                 'model_time': model_process_time,
             }
         }
+
+inference = caws_task(inference)

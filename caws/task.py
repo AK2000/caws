@@ -66,7 +66,7 @@ class CawsTask:
         return [(f(self.func, *args, **kwargs), t) for (f, t) in self.features]
 
     def mainify(self):
-        self.func = mainify(func)
+        self.func = mainify(self.func)
     
     def extract_func(self):
         return self.func

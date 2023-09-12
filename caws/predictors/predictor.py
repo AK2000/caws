@@ -5,6 +5,21 @@ from scipy import interpolate, integrate
 from scipy.stats import bootstrap
 import sqlalchemy
 from sqlalchemy import text
+from collections import namedtuple
+
+Prediction = namedtuple("Prediction", ["runtime", "energy"])
+
+def split(df, columns):
+        gb = df.groupby(columns)
+        return [gb.get_group(x) for x in gb.groups]
+
+def sum_resources(df1, df2, columns=["perf_unhalted_core_cycles", "perf_unhalted_reference_cycles", "perf_llc_misses", "perf_instructions_retired", "cpu_freq_rel"]):
+    df = pd.merge_asof(df1[columns], df2[columns], on="timestamp", direction="forward")
+    for col in columns:
+        df[col] = df[f"{col}_x"] + df[f"{col}_y"]
+        df = df.drop([f"{col}_x", f"{col}_y"], axis=1)
+    df = df.set_index("timestamp")
+    return df
 
 class EndpointModel:
     def __init__(self, tasks, resources, energy, caws_df):
@@ -124,7 +139,7 @@ class EndpointModel:
         tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy"]]
         self.tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
 
-    def predict_func(self, func_name, include_ci=True, confidence_level=0.9):
+    def predict_func(self, func_name, include_ci=False, confidence_level=0.9):
         func_tasks = self.tasks[self.tasks["func_name"] == func_name]
         runtime_mean = func_tasks["running_duration"].mean()
         runtime_std = func_tasks["running_duration"].std()
@@ -147,7 +162,7 @@ class EndpointModel:
                     "energy": (energy_mean, energy_std)}
                 )
             
-        return {"runtime": (runtime_mean, runtime_std), "energy": (energy_mean, energy_std)}
+        return Prediction(runtime_mean, energy_mean)
 
     def predict_cold_start(self):
         cold_start_tasks = self.tasks[self.tasks["endpoint_status"] == "COLD"]
@@ -169,22 +184,13 @@ class Predictor:
         for endpoint in endpoints:
             tasks, resources, energy = endpoint.collect_monitoring_info()
             caws_df = func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
-            self.endpoints[endpoint] = self.EndpointModel(self, tasks, resources, energy, caws_df)
+            self.endpoints[endpoint.name] = self.EndpointModel(self, tasks, resources, energy, caws_df)
 
-    def predict(self, endpoint, task_info):
-        pass
-
+    def predict(self, endpoint, task):
+        return self.endpoints[endpoint.name].predict_func(task)
+        
     def static_power(self, endpoint):
-        pass
+        return self.endpoints[endpoint.name].predict_static_power()
 
-def split(df, columns):
-        gb = df.groupby(columns)
-        return [gb.get_group(x) for x in gb.groups]
-
-def sum_resources(df1, df2, columns=["perf_unhalted_core_cycles", "perf_unhalted_reference_cycles", "perf_llc_misses", "perf_instructions_retired", "cpu_freq_rel"]):
-    df = pd.merge_asof(df1[columns], df2[columns], on="timestamp", direction="forward")
-    for col in columns:
-        df[col] = df[f"{col}_x"] + df[f"{col}_y"]
-        df = df.drop([f"{col}_x", f"{col}_y"], axis=1)
-    df = df.set_index("timestamp")
-    return df
+    def cold_start(self, endpoint):
+        return self.endpoints[endpoint.name].predict_cold_start()

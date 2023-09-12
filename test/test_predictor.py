@@ -1,0 +1,1 @@
+from caws.predictors import predictor

@@ -1,3 +1,6 @@
+from caws.task import caws_task
+from caws.features import ArgFeature
+
 def graph_bfs(size):
     import datetime
     import igraph
@@ -20,3 +23,5 @@ def graph_bfs(size):
                 'compute_time': process_time
             }
     }
+
+graph_bfs = caws_task(graph_bfs, features=[ArgFeature(0)])

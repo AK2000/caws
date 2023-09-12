@@ -1,3 +1,5 @@
+from caws.task import caws_task
+
 def dna_visualization(download_path, *, _caws_output_dir):
     # using https://squiggle.readthedocs.io/en/latest/
     from squiggle import transform
@@ -27,3 +29,5 @@ def dna_visualization(download_path, *, _caws_output_dir):
                 'compute_time': process_time
             }
     }
+
+dna_visualization = caws_task(dna_visualization)
