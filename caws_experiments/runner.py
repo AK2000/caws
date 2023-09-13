@@ -158,6 +158,7 @@ def profile(endpoint_name,
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, strategy, caws_database_url=config_obj["caws_monitoring_db"]) as executor:
         for func, args, kwargs in benchmarks:
+            print(f"Starting benchmark: {func.func.__name__}")
             if warmup:
                 fut = executor.submit(time.sleep, 5)
                 fut.result()
@@ -173,7 +174,7 @@ def profile(endpoint_name,
                 for future in futures:
                     future.result() # Raise any exceptions
 
-            time.sleep(30) # Rate limit so each new benchmark is a new node
+            time.sleep(60) # Rate limit so each new benchmark is a new node
 
 if __name__ == "__main__":
     cli()
