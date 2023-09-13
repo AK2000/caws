@@ -50,7 +50,7 @@ class Endpoint:
                  transfer_id=None,
                  endpoint_path:str = "~/", # TODO: Figure out resolve use for default path
                  local_path:str = None,
-                 monitoring_avail: bool = False,
+                 monitoring_avail: bool = True,
                  monitor_url=None,
                  monitor_carbon: bool = False,
                  lat=None,
@@ -134,26 +134,26 @@ class Endpoint:
         if not self.monitoring_avail:
             return None
 
-        with self.monitoring_engine.begin() as connection:
-            run_ids = list(connection.execute(select(mdb.Workflow.run_id).where(mdb.Workflow.workflow_name == self.compute_endpoint_id)).all())
+        with self.monitoring_engine.begin() as conn:
+            run_ids = list(conn.execute(select(mdb.Workflow.run_id).where(mdb.Workflow.workflow_name == self.compute_endpoint_id)).all())
             task_run_ids_or = [mdb.Try.run_id == run_id[0] for run_id in run_ids]
-            task_df = pd.read_sql(select(mdb.Try).where(or_(*task_run_ids_or)))
+            task_df = pd.read_sql(select(mdb.Try).where(or_(*task_run_ids_or)), conn)
             end_times = pd.read_sql(f"SELECT task_id, timestamp FROM status WHERE (task_status_name='running_ended')", conn)
             task_df = pd.merge(task_df, end_times, on="task_id")
             task_df = task_df.rename(columns={"timestamp": "task_try_time_running_ended"})
             task_df = task_df.set_index("task_id")
-            trys["task_try_time_running"] = pd.to_datetime(trys["task_try_time_running"])
-            trys["task_try_time_running_ended"] = pd.to_datetime(trys["task_try_time_running_ended"])
+            task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"])
+            task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"])
 
             resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
-            resources_df = pd.read_sql(select(mdb.Resource).where(or_(*resource_run_ids_or)))
+            resources_df = pd.read_sql(select(mdb.Resource).where(or_(*resource_run_ids_or)), conn)
 
             energy_run_ids_or = [mdb.Energy.run_id == run_id[0] for run_id in run_ids]
-            energy_df = pd.read_sql(select(mdb.Energy).where(or_(*energy_run_ids_or)))
+            energy_df = pd.read_sql(select(mdb.Energy).where(or_(*energy_run_ids_or)), conn)
 
         # TODO: Adapt this to online setting and avoid fetching the same data repeatedly
 
-        return task_df, resource_df, energy_df
+        return task_df, resources_df, energy_df
 
 
     def collect_carbon_intensity(self):
@@ -212,9 +212,9 @@ class Endpoint:
 
         if status["status"] != "online":
             self.state = EndpointState.DEAD
-        elif status["details"]["active_managers"] > 0 and self.state == EndpointState.WARMING:
+        elif status["details"]["active_managers"] > 0 and self.state != EndpointState.WARM:
             self.state = EndpointState.WARM
-        elif status["details"]["active_managers"] == 0 and self.state == EndpointState.WARM:
+        elif status["details"]["active_managers"] == 0 and self.state != EndpointState.WARMING:
             self.state = EndpointState.COLD
 
         return self.state

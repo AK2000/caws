@@ -48,7 +48,7 @@ class CawsExecutor(object):
                  strategy: Strategy,
                  caws_database_url: str | None = None,
                  task_watchdog_sleep: float = 0.2,
-                 endpoint_watchdog_sleep: float = 5):
+                 endpoint_watchdog_sleep: float = 2):
         
         self.endpoints = endpoints
         self.strategy = strategy
