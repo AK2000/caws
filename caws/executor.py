@@ -158,10 +158,13 @@ class CawsExecutor(object):
         # with each other and can be written to a Globus accessible directory
         # TODO: Figure out how this might work with images and K8s
         # TODO: Figure out how convert returned paths into CawsPaths. Maybe register a deserializer?
-        sig = inspect.signature(task.func)
-        if "_caws_output_dir" in sig.parameters:
-            task.task_kwargs["_caws_output_dir"] = os.path.join(endpoint.local_path, ".caws", str(task.task_id))
-            # task.func = create_output_dir_wrapper(task.func) # Create output dir
+        try:
+            sig = inspect.signature(task.func)
+            if "_caws_output_dir" in sig.parameters:
+                task.task_kwargs["_caws_output_dir"] = os.path.join(endpoint.local_path, ".caws", str(task.task_id))
+                # task.func = create_output_dir_wrapper(task.func) # Create output dir
+        except:
+            pass
 
         # Start Globus transfer of required files, if any
         if len(files) > 0:

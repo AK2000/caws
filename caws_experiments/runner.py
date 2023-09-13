@@ -136,39 +136,44 @@ def profile(endpoint_name,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matrix_multiplication"]
+        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matmul"]
     
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     benchmarks = []
-    for benchmark_name in benchmarks:
+    for benchmark_name in benchmark_names:
+        if benchmark_name in exclude:
+            continue
+        
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
         args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
         benchmark.func.mainify()
         benchmarks.append((benchmark.func, args, kwargs))
+        print("Running benchmark:", benchmark_name)
 
     task_range = np.logspace(0, np.log2(max_tasks), num=int(np.log2(max_tasks))+1, base=2, dtype='int', endpoint=True)
-
+    print("Task Range: ", task_range)
+    
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, strategy, caws_database_url=config_obj["caws_monitoring_db"]) as executor:
-        if warmup:
-            fut = executor.submit(time.sleep, 5)
-            fut.result()
-        
-
-        for ntasks in task_range:
-            futures = []
-            with executor.scheduling_lock: # Ensure all tasks are batched together
-                for func, args, kwargs in benchmarks:
+        for func, args, kwargs in benchmarks:
+            if warmup:
+                fut = executor.submit(time.sleep, 5)
+                fut.result()
+            
+            for ntasks in task_range:
+                # Ensure all tasks are batched together
+                futures = []
+                with executor.scheduling_lock:
                     for _ in range(ntasks):
                         futures.append(executor.submit(func, *args, **kwargs))
-            concurrent.futures.wait(futures)
+                
+                concurrent.futures.wait(futures)
+                for future in futures:
+                    future.result() # Raise any exceptions
 
-            for future in futures:
-                future.result()
-
-        time.sleep(30) # Rate limit so each new benchmark is a cold start 
+            time.sleep(30) # Rate limit so each new benchmark is a new node
 
 if __name__ == "__main__":
     cli()
