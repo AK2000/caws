@@ -212,9 +212,9 @@ class Endpoint:
 
         if status["status"] != "online":
             self.state = EndpointState.DEAD
-        elif status["details"]["active_managers"] > 0 and self.state != EndpointState.WARM:
+        elif len(status["details"]["active_managers"]) > 0 and self.state != EndpointState.WARM:
             self.state = EndpointState.WARM
-        elif status["details"]["active_managers"] == 0 and self.state != EndpointState.WARMING:
+        elif len(status["details"]["active_managers"]) == 0 and self.state != EndpointState.WARMING:
             self.state = EndpointState.COLD
 
         return self.state
