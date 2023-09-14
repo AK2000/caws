@@ -141,7 +141,6 @@ class Endpoint:
             end_times = pd.read_sql(f"SELECT task_id, timestamp FROM status WHERE (task_status_name='running_ended')", conn)
             task_df = pd.merge(task_df, end_times, on="task_id")
             task_df = task_df.rename(columns={"timestamp": "task_try_time_running_ended"})
-            task_df = task_df.set_index("task_id")
             task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"])
             task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"])
 
