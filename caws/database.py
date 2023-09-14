@@ -36,8 +36,7 @@ class CawsDatabase:
 
         self.meta.reflect(bind=self.eng)
 
-        Session = sessionmaker(bind=self.eng)
-        self.session = Session()
+        self.Session = sessionmaker(bind=self.eng)
 
     def _get_mapper(self, table_obj: Table) -> Mapper:
         all_mappers: Set[Mapper] = set()
@@ -62,18 +61,19 @@ class CawsDatabase:
         mappings = self._generate_mappings(table_obj, columns=columns,
                                            messages=messages)
         mapper = self._get_mapper(table_obj)
-        self.session.bulk_update_mappings(mapper, mappings)
-        self.session.commit()
+
+        with self.Session() as session:
+            session.bulk_update_mappings(mapper, mappings)
+            session.commit()
 
     def insert(self, *, table: str, messages: List[dict[str, Any]]) -> None:
         table_obj = self.meta.tables[table]
         mappings = self._generate_mappings(table_obj, messages=messages)
         mapper = self._get_mapper(table_obj)
-        self.session.bulk_insert_mappings(mapper, mappings)
-        self.session.commit()
 
-    def rollback(self) -> None:
-        self.session.rollback()
+        with self.Session() as session:
+            session.bulk_insert_mappings(mapper, mappings)
+            session.commit()
 
     def _generate_mappings(self, table: Table, columns: Optional[List[str]] = None, messages: List[Dict[str, Any]] = []) -> List[Dict[str, Any]]:
         mappings = []
