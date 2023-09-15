@@ -12,6 +12,7 @@ from enum import IntEnum
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+from distutils.dir_util import copy_tree
 import json
 
 import globus_sdk
@@ -157,6 +158,8 @@ class TransferManager(object):
 
             if src.transfer_endpoint_id == dst.transfer_endpoint_id:
                 logger.debug(f'Skipped transfer from {src_name} to {dst_name}')
+                for src_path in files:
+                    copy_tree(src_path.get_src_local_path(), src_path.get_dest_local_path(dst, task_id))
                 continue
 
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
@@ -173,7 +176,11 @@ class TransferManager(object):
                 size += src_path.size
                 tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_id))
             task_record.remaining += 1
-            
+
+        if task_record.remaining == 0:
+            if task_record.callback is not None:
+                task_record.callback()
+            task_record.status = TransferStatus.COMPLETED
         return task_record
 
     def submit_pending_transfers(self):
