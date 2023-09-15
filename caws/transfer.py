@@ -12,7 +12,7 @@ from enum import IntEnum
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable, Optional
-from distutils.dir_util import copy_tree
+import shutil
 import json
 
 import globus_sdk
@@ -159,7 +159,10 @@ class TransferManager(object):
             if src.transfer_endpoint_id == dst.transfer_endpoint_id:
                 logger.debug(f'Skipped transfer from {src_name} to {dst_name}')
                 for src_path in files:
-                    copy_tree(src_path.get_src_local_path(), src_path.get_dest_local_path(dst, task_id))
+                    dest_path = src_path.get_dest_local_path(dst, task_id)
+                    dir_name = os.path.dirname(dest_path)
+                    os.makedirs(dir_name, exist_ok=True)
+                    shutil.copy2(src_path.get_src_local_path(),  dest_path)
                 continue
 
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
