@@ -8,7 +8,7 @@ from caws.predictors.transfer_predictors import TransferPredictor
 from caws.transfer import TransferManager, TransferStatus
 from caws.path import CawsPath
 
-from util_funcs import transfer_file
+from test.util_funcs import transfer_file
 
 def test_transfer_manager():
     source_name = "caws-dev_ep1"

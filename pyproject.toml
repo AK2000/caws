@@ -16,11 +16,18 @@ classifiers = [
 ]
 dependencies = [
     "globus-compute-sdk @ git+https://github.com/AK2000/funcX@power_monitoring_new#subdirectory=compute_sdk",
+    "psycopg2",
     "sqlalchemy",
     "geoip2",
     "click"
 ]
 dynamic = ["version"]
+
+[project.optional-dependencies]
+all = ['caws[dev, endpoint]']
+dev = ['black', 'pandas', 'pytest', 'scikit-learn']
+endpoint = ["parsl@git+https://github.com/AK2000/parsl@power-monitoring", "globus-compute-endpoint@git+https://github.com/AK2000/funcX@power_monitoring_new#subdirectory=compute_endpoint",
+]
 
 [tool.setuptools]
 packages = ["caws", "caws_experiments"]

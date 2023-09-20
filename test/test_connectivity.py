@@ -1,7 +1,7 @@
 import pytest
 
 from globus_compute_sdk import Executor
-from util_funcs import add
+from test.util_funcs import add
 
 def test_funcx(endpoint_id):
     # Check to make sure regular functionality of funcx and the endpoint
