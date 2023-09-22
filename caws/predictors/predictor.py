@@ -165,7 +165,12 @@ class EndpointModel:
 
 class Predictor:
     def __init__(self, endpoints, caws_database_url):
-        self.eng = sqlalchemy.create_engine(caws_database_url) #TODO: Better method for this?
+        self.last_update_time = {}
+        self.transfer_models = {} # Build transfer models on demand
+        self.caws_database_url = caws_database_url
+
+    def start(self)
+        self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
         self.Session = sessionmaker(bind=self.eng)
         with self.Session() as session:
             connection = session.connection()
@@ -191,10 +196,7 @@ class Predictor:
             static_power = endpoint_df.loc[endpoint.compute_endpoint_id]["static_power"]
             energy_consumed = endpoint_df.loc[endpoint.compute_endpoint_id]["energy_consumed"]
             self.endpoints[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
-        
-        self.last_update_time = {}
-        self.transfer_models = {} # Build transfer models on demand
-
+    
     def create_update(self, meta):
         def method(table, conn, keys, data_iter):
             sql_table = Table(table.name, meta, autoload=True)

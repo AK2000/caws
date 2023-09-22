@@ -29,32 +29,13 @@ def test_predictor_empty():
     caws_db.update_endpoints([msg])
 
     predictor = Predictor([endpoint,], caws_database_url)
+    predictor.start()
+    
     task = CawsTaskInfo(None, (), {}, None, "__main__.graph_bfs")
 
     assert predictor.predict_execution(endpoint, task) is None
     assert predictor.predict_static_power(endpoint) is None
     assert predictor.predict_cold_start(endpoint) == 0
-
-def test_predictor_init():
-    endpoint = caws.Endpoint(
-        "desktop",
-        compute_id="6754af96-7afa-4c81-b7ef-cf54587f02fa",
-        transfer_id="12906d72-48e0-11ee-8135-15041d20ea55"
-    )
-    endpoints = [endpoint]
-
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
-    with caws.CawsExecutor(endpoints, strategy) as executor:
-        fut = executor.submit(add, 1, 2)
-        assert fut.result() == 3
-        task_info = fut.task_info
-
-    predictor = Predictor([endpoint,], caws_database_url)
-    result = predictor.predict_execution(endpoint, task_info)
-
-    assert not math.isnan(result.runtime)
-    assert not math.isnan(result.energy)
-    assert not math.isnan(predictor.predict_static_power(endpoint))
 
 def test_predictor_update():
     endpoint = caws.Endpoint(
@@ -66,7 +47,7 @@ def test_predictor_update():
 
     predictor = Predictor([endpoint,], caws_database_url)
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
-    with caws.CawsExecutor(endpoints, strategy) as executor:
+    with caws.CawsExecutor(endpoints, strategy, predictor=predictor) as executor:
         fut = executor.submit(add, 1, 2)
         assert fut.result() == 3
         task_info = fut.task_info

@@ -46,12 +46,14 @@ class CawsExecutor(object):
     def __init__(self, 
                  endpoints: list[Endpoint],
                  strategy: Strategy,
+                 predictor = None,
                  caws_database_url: str | None = None,
                  task_watchdog_sleep: float = 0.2,
                  endpoint_watchdog_sleep: float = 2):
         
         self.endpoints = endpoints
         self.strategy = strategy
+        self.predictor = predictor
         self._task_watchdog_sleep = task_watchdog_sleep
         self._endpoint_watchdog_sleep = endpoint_watchdog_sleep
 
@@ -81,6 +83,9 @@ class CawsExecutor(object):
             }
             msgs.append(msg)
         self.caws_db.update_endpoints(msgs)
+
+        if self.predictor:
+            self.predictor.start()
         
         self.caws_db.start()
         self._transfer_manager.start()
