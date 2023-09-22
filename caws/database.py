@@ -135,6 +135,8 @@ class CawsDatabase:
         time_submit = Column(DateTime, nullable=False)
         time_completed = Column(DateTime, nullable=True)
         bytes_transferred = Column(BigInteger, nullable=True)
+        files_transferred = Column(Integer, nullable=True)
+        sync_level = Column(Integer, nullable=True)
 
     class TaskFeatures(Base):
         __tablename__ = "features"
@@ -228,7 +230,7 @@ class CawsDatabaseManager(metaclass=Singleton):
     def _database_pushing_loop(self):
         task_update_cols = ["funcx_task_id", "endpoint_id", "transfer_endpoint_id", "endpoint_status", "task_status",
                        "time_scheduled", "time_began", "time_completed", "caws_task_id"]
-        transfer_update_cols = ["transfer_id", "transfer_status", "time_completed", "bytes_transferred"]
+        transfer_update_cols = ["transfer_id", "transfer_status", "time_completed", "bytes_transferred", "files_transferred", "sync_level"]
 
         while not self._kill_event.is_set():
             task_messages = self._get_messages_in_batch(self.task_msg_queue)

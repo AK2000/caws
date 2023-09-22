@@ -163,11 +163,15 @@ class Predictor:
             """AND (endpoint_id in :endpoint_ids) LEFT JOIN features ON """
             """caws_task.caws_task_id=features.caws_task_id""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
-            func_to_tasks = pd.read_sql(query, connection).dropna()
+            func_to_tasks = pd.read_sql(query, connection)
 
             query = text("""SELECT * FROM caws_endpoint WHERE endpoint_id in :endpoint_ids""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
-            endpoint_df = pd.read_sql(query, connection).dropna()
+            endpoint_df = pd.read_sql(query, connection)
+
+            query = text("""SELECT * FROM transfer LIMIT 1000""")
+            self.transfers = pd.read_sql(query, connection)
+            self.transfers["runtime"] = self.transfers["time_completed"] - self.transfers["time_submit"]
 
         self.endpoints = {}
         for endpoint in endpoints:
@@ -175,6 +179,7 @@ class Predictor:
             self.endpoints[endpoint.name] = EndpointModel(tasks)
         
         self.last_update_time = {}
+        self.transfer_models = {} # Build transfer models on demand
 
     def create_update(meta):
         def method(table, conn, keys, data_iter):
@@ -194,7 +199,12 @@ class Predictor:
                 """AND (endpoint_id = :endpoint_id)  AND (time_began > :start_time)"""
                 """LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id""")
             query = query.bindparams({"endpoint_id": endpoint.compute_endpoint_id, "start_time": endpoint.start_time})
-            caws_task = pd.read_sql(query, connection).dropna()
+            caws_task = pd.read_sql(query, connection)
+
+            query = text("""SELECT * FROM transfer LIMIT 1000""")
+            self.transfers = pd.read_sql(query, connection)
+            self.transfers["runtime"] = self.transfers["time_completed"] - self.transfers["time_submit"]
+            # I don't delete the transfer models here
 
         tasks, static_power, energy_consumed = self.endpoints[endpoint.name].train(tasks, resources, energy, caws_task)
 
@@ -209,12 +219,30 @@ class Predictor:
         
         self.last_update_time[endpoint.name] = datetime.now()
 
-    def predict(self, endpoint, task):
+    def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
         pred = self.endpoints[endpoint.name].predict_func(task.function_name, task.features)
         if pred is None:
             raise NotImplementedError("TODO: Implement low-rank matrix completion for missing values")
         return pred
+
+    def predict_transfer(self, src_endpoint, dst_endpoint, size, files):
+        if (src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id) in self.transfer_models:
+            pred_runtime = np.array([size, files]) @ self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)]
+
+        transfers = self.transfers[
+            (self.transfers["src_endpoint_id"] == src_endpoint.transfer_endpoint_id) \
+            &  (self.transfers["dst_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
+        
+        X = transfers[["bytes_transferred", "files_transferred"]].to_numpy()
+        y = transfers["runtime"]
+        w, _, _, _ = np.linalg.lstsq(X, y)
+
+        self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
+        pred_runtime = np.array([size, files]) @ w
+
+        # TODO: Implement energy prediction
+        return Prediction(pred_runtime, 0)        
         
     def static_power(self, endpoint):
         return self.endpoints[endpoint.name].predict_static_power()

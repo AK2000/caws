@@ -312,6 +312,9 @@ class TransferManager(object):
                 elif status['status'] == 'SUCCEEDED':
                     info["transfer_status"] = "SUCCEEDED"
                     info["bytes_transferred"] = status["bytes_transferred"]
+                    info["sync_level"] = status["sync_level"]
+                    info["files_transffered"] = status["files_transferred"]
+                    
                     logger.info('Globus transfer {} finished in time {}'
                                 .format(name, info['time_completed'] - info['time_submit']))
 
