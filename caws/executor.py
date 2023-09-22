@@ -71,6 +71,16 @@ class CawsExecutor(object):
 
     def start(self):
         print("Executor starting")
+        msgs = []
+        for endpoint in self.endpoints:
+            msg = {
+                "endpoint_id": endpoint.endpoint_id,
+                "transfer_endpoint_id": endpoint.transfer_endpoint_id,
+                "tasks_run": 0,
+            }
+            msgs.append(msg)
+        self.caws_db.update_endpoints(msgs)
+        
         self.caws_db.start()
         self._transfer_manager.start()
 

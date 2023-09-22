@@ -2,7 +2,7 @@ from enum import Enum, IntEnum
 import requests
 import json
 import sqlalchemy
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 import pandas as pd
 import os
 import datetime
@@ -129,28 +129,40 @@ class Endpoint:
             self.state = EndpointState.WARM
         else:
             self.state = EndpointState.COLD
+        
+        self.start_time = datetime.datetime.now(0)
 
     def collect_monitoring_info(self, prev_timestamp = None):
         if not self.monitoring_avail:
             return None
 
+        if prev_timestamp == None:
+            prev_timestamp = self.start_time
+
         with self.monitoring_engine.begin() as conn:
-            run_ids = list(conn.execute(select(mdb.Workflow.run_id).where(mdb.Workflow.workflow_name == self.compute_endpoint_id)).all())
+            run_ids = list(conn.execute(select(mdb.Workflow.run_id).where(
+                and_(
+                    mdb.Workflow.workflow_name == self.compute_endpoint_id,
+                    or_(
+                        mdb.Workflow.time_completed > prev_timestamp,
+                        mdb.Workflow.time_completed == None
+                    )
+                )
+            )).all())
             task_run_ids_or = [mdb.Try.run_id == run_id[0] for run_id in run_ids]
-            task_df = pd.read_sql(select(mdb.Try).where(or_(*task_run_ids_or)), conn)
-            end_times = pd.read_sql(f"SELECT task_id, timestamp FROM status WHERE (task_status_name='running_ended')", conn)
+            task_df = pd.read_sql(select(mdb.Try).where(and_(or_(*task_run_ids_or), mdb.Try.task_try_time_launched > prev_timestamp)), conn)
+
+            end_times = pd.read_sql(select(mdb.Status).where(and_(mdb.Status.task_status_name == "running_ended", mdb.Status.timestamp > prev_timestamp)), conn)
             task_df = pd.merge(task_df, end_times, on="task_id")
             task_df = task_df.rename(columns={"timestamp": "task_try_time_running_ended"})
             task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"])
             task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"])
 
             resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
-            resources_df = pd.read_sql(select(mdb.Resource).where(or_(*resource_run_ids_or)), conn)
+            resources_df = pd.read_sql(select(mdb.Resource).where(and_(or_(*resource_run_ids_or), mdb.Resource.timestamp > prev_timestamp)), conn)
 
             energy_run_ids_or = [mdb.Energy.run_id == run_id[0] for run_id in run_ids]
-            energy_df = pd.read_sql(select(mdb.Energy).where(or_(*energy_run_ids_or)), conn)
-
-        # TODO: Adapt this to online setting and avoid fetching the same data repeatedly
+            energy_df = pd.read_sql(select(mdb.Energy).where(and_(or_(*energy_run_ids_or), mdb.Energy.timestamp > prev_timestamp)), conn)
 
         return task_df, resources_df, energy_df
 

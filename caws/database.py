@@ -38,6 +38,13 @@ class CawsDatabase:
 
         self.Session = sessionmaker(bind=self.eng)
 
+        if self.eng.dialect.name == 'postrgesql':
+            from sqlalchemy.dialects.postgresql import insert
+        elif self.eng.dialect.name == 'sqlite':
+            from sqlalchemy.dialects.sqlite import insert
+        else:
+            raise NotImplementedError(f"Unsuported dialect for CAWS databse {self.eng.dialect.name}")
+
     def _get_mapper(self, table_obj: Table) -> Mapper:
         all_mappers: Set[Mapper] = set()
         for mapper_registry in mapperlib._all_registries():  # type: ignore
@@ -75,6 +82,15 @@ class CawsDatabase:
             session.bulk_insert_mappings(mapper, mappings)
             session.commit()
 
+    def insert_or_nothing(self, *, table: str, index_elements: List[str], messages: List[dict[str, Any]]) -> None:
+        table_obj = self.meta.tables[table]
+        insert_mappings = self._generate_mappings(table_obj, messages=messages)
+        stmt = insert(table_obj).values(insert_mappings)
+        stmt = stmt.on_conflict_do_nothing(index_elements=index_elements)
+        with self.Session() as session:
+            session.execute(stmt)
+            session.commit()
+
     def _generate_mappings(self, table: Table, columns: Optional[List[str]] = None, messages: List[Dict[str, Any]] = []) -> List[Dict[str, Any]]:
         mappings = []
         for msg in messages:
@@ -99,6 +115,16 @@ class CawsDatabase:
         time_scheduled = Column(DateTime, nullable=True)
         time_began = Column(DateTime, nullable=True)
         time_completed = Column(DateTime, nullable=True)
+        running_duration = Column(DateTime, nullable=True)
+        energy_consumed = Column(DateTime, nullable=True)
+
+    class CawsEndpoint(Base):
+        __tablename__ = "caws_endpoint"
+        endpoint_id = Column(Text, nullable=False, primary_key=True)
+        transfer_endpoint_id = Column(Text, nullable=True)
+        tasks_run = Column(Integer, nullable=True)
+        static_power = Column(BigInteger, nullable=True)
+        energy_consumed = Column(BigInteger, nullable=True)
 
     class Transfer(Base):
         __tablename__ = "transfer"
@@ -112,7 +138,7 @@ class CawsDatabase:
 
     class TaskFeatures(Base):
         __tablename__ = "features"
-        caws_task_id = Column(Text, nullable=False)
+        caws_task_id = Column(Text, sa.ForeignKey('caws_task.caws_task_id'), nullable=False)
         feature_id = Column(Integer, nullable=False)
         feature_type = Column(Text, nullable=False)
         value = Column(Text, nullable=False)
@@ -157,6 +183,9 @@ class CawsDatabaseManager(metaclass=Singleton):
             print("Joining database thread")
             self._pusher_thread.join()
             self.started = False
+
+    def update_endpoints(self, msgs):
+        self.db.insert_or_nothing(table="caws_endpoint", index_elements=["endpoint_id"], messages=[msgs])
 
     def send_task_message(self, task: CawsTaskInfo):
         msg = dict()

@@ -45,7 +45,7 @@ class TransferRecord:
     error: None | str = None
 
 class TransferManager(object):
-    def __init__(self, caws_db: Optional[CawsDatabaseManager] = None, sync_level='mtime', log_level=logging.INFO):
+    def __init__(self, caws_db: Optional[CawsDatabaseManager] = None, sync_level=None, log_level=logging.INFO):
         # Authorize with globus
         self.transfer_client = self.get_transfer_client()
         self.sync_level = sync_level
@@ -178,6 +178,9 @@ class TransferManager(object):
             for src_path in files:
                 size += src_path.size
                 tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_id))
+                if not src_path.isolate:
+                    tdata.sync_level = "exists"
+                    
             task_record.remaining += 1
 
         if task_record.remaining == 0:
