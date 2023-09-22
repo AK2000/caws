@@ -38,6 +38,7 @@ class CawsDatabase:
 
         self.Session = sessionmaker(bind=self.eng)
 
+        global insert
         if self.eng.dialect.name == 'postrgesql':
             from sqlalchemy.dialects.postgresql import insert
         elif self.eng.dialect.name == 'sqlite':
@@ -187,7 +188,7 @@ class CawsDatabaseManager(metaclass=Singleton):
             self.started = False
 
     def update_endpoints(self, msgs):
-        self.db.insert_or_nothing(table="caws_endpoint", index_elements=["endpoint_id"], messages=[msgs])
+        self.db.insert_or_nothing(table="caws_endpoint", index_elements=["endpoint_id"], messages=msgs)
 
     def send_task_message(self, task: CawsTaskInfo):
         msg = dict()

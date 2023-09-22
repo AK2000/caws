@@ -130,7 +130,7 @@ class Endpoint:
         else:
             self.state = EndpointState.COLD
         
-        self.start_time = datetime.datetime.now(0)
+        self.start_time = datetime.datetime.now()
 
     def collect_monitoring_info(self, prev_timestamp = None):
         if not self.monitoring_avail:

@@ -161,12 +161,12 @@ class Predictor:
     def __init__(self, endpoints, caws_database_url):
         self.eng = sqlalchemy.create_engine(caws_database_url) #TODO: Better method for this?
         self.Session = sessionmaker(bind=self.eng)
-        with self.Session() as connection:
-            query = text("""SELECT caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, energy_consumed"""
-            """features.feature_id, features.feature_type, features.value """
-            """FROM caws_task WHERE (task_status='COMPLETED') """
-            """AND (endpoint_id in :endpoint_ids) LEFT JOIN features ON """
-            """caws_task.caws_task_id=features.caws_task_id""")
+        with self.Session() as session:
+            connection = session.connection()
+            query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                """energy_consumed, features.feature_id, features.feature_type, features.value """
+                """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                """AND (endpoint_id in :endpoint_ids))""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
             func_to_tasks = pd.read_sql(query, connection)
 
@@ -200,11 +200,12 @@ class Predictor:
         prev_query = self.last_update_time.get(endpoint.name, None)
 
         tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
-        with self.Session() as connection:
+        with self.Session() as session:
+            connection = session.connection()
             query = text("""SELECT caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status """
                 """features.feature_id, features.feature_type, features.value """
                 """FROM caws_task WHERE (task_status='COMPLETED') """
-                """AND (endpoint_id = :endpoint_id)  AND (time_began > :start_time)"""
+                """AND (endpoint_id = :endpoint_id)  AND (time_began > :start_time) """
                 """LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id""")
             query = query.bindparams({"endpoint_id": endpoint.compute_endpoint_id, "start_time": endpoint.start_time})
             caws_task = pd.read_sql(query, connection)
@@ -231,7 +232,9 @@ class Predictor:
         # TODO: Figure out how to implement impute for missing values
         pred = self.endpoints[endpoint.name].predict_func(task.function_name, task.features)
         if pred is None:
-            raise NotImplementedError("TODO: Implement low-rank matrix completion for missing values")
+            # TODO: Implement low-rank matrix completion for missing values
+            return None
+
         return pred
 
     def predict_transfer(self, src_endpoint, dst_endpoint, size, files):
@@ -252,8 +255,8 @@ class Predictor:
         # TODO: Implement energy prediction
         return Prediction(pred_runtime, 0)        
         
-    def static_power(self, endpoint):
+    def predict_static_power(self, endpoint):
         return self.endpoints[endpoint.name].predict_static_power()
 
-    def cold_start(self, endpoint):
+    def predict_cold_start(self, endpoint):
         return self.endpoints[endpoint.name].predict_cold_start()

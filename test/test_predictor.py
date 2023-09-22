@@ -4,15 +4,15 @@ import math
 import caws
 from caws import CawsTaskInfo
 from caws.predictors.predictor import Predictor, Prediction
-from caws.database import CawsDatabase, CawsDatabaseManager
+from caws.database import CawsDatabaseManager
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
 from util_funcs import add, transfer_file
 
-caws_database_url = "test_data/monitoring.db"
+caws_database_url = "sqlite:////home/alokvk2/research/energy_aware/caws/test/test_data/monitoring.db"
 
 def test_predictor_empty():
-    caws_db = CawsDatabase(caws_database_url)
+    caws_db = CawsDatabaseManager(caws_database_url)
     endpoint = caws.Endpoint(
         "desktop",
         compute_id="6754af96-7afa-4c81-b7ef-cf54587f02fa",
@@ -20,7 +20,7 @@ def test_predictor_empty():
     )
 
     msg = {
-        "endpoint_id": endpoint.endpoint_id,
+        "endpoint_id": endpoint.compute_endpoint_id,
         "transfer_endpoint_id": endpoint.transfer_endpoint_id,
         "tasks_run": 0,
         "energy_consumed": 0
@@ -46,4 +46,4 @@ def test_predictor_transfer():
     pass
 
 if __name__ == "__main__":
-    test_predictor()
+    test_predictor_empty()
