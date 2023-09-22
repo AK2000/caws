@@ -11,7 +11,7 @@ import pandas as pd
 from sklearn.linear_model import ElasticNet
 
 import sqlalchemy
-from sqlalchemy import text, bindparam, update
+from sqlalchemy import text, bindparam, update, MetaData, Table
 from sqlalchemy.orm import sessionmaker
 
 
@@ -119,6 +119,9 @@ class EndpointModel:
         tasks["energy_consumed"]  = tasks.apply(calc_energy, axis=1)
 
         tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
+        caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began"]]
+        print(tasks)
+
         tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
         self.tasks = self.tasks.append(tasks)
         self.regressions = {}
@@ -137,8 +140,11 @@ class EndpointModel:
 
             data_matrix = np.stack(func_tasks["value"].values)
             (n, f) = data_matrix.shape
+            print(data_matrix)
             data_matrix = np.c_[data_matrix, np.ones(n)]
             y_matrix = func_tasks[["running_duration", "energy_consumed"]].to_numpy()
+            print(y_matrix)
+
             w, _, _, _ = np.linalg.lstsq(data_matrix, y_matrix)
             self.regressions[func_name] = w
         else:
@@ -164,7 +170,7 @@ class Predictor:
         with self.Session() as session:
             connection = session.connection()
             query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
-                """energy_consumed, features.feature_id, features.feature_type, features.value """
+                """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
                 """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
                 """AND (endpoint_id in :endpoint_ids))""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
@@ -189,25 +195,27 @@ class Predictor:
         self.last_update_time = {}
         self.transfer_models = {} # Build transfer models on demand
 
-    def create_update(meta):
+    def create_update(self, meta):
         def method(table, conn, keys, data_iter):
-            sql_table = self.eng.Table(table.name, meta, autoload=True)
-            update_stmt = update(sql_table).values([dict(zip(keys, data)) for data in data_iter])
-            conn.execute(update_stmt)
+            sql_table = Table(table.name, meta, autoload=True)
+            values = [dict(zip(keys, data)) for data in data_iter]
+            print(values)
+            update_stmt = update(sql_table)
+            print(update_stmt)
+            conn.execute(update_stmt, values)
         return method   
 
     def update(self, endpoint):
-        prev_query = self.last_update_time.get(endpoint.name, None)
+        prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
 
         tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
         with self.Session() as session:
             connection = session.connection()
-            query = text("""SELECT caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status """
-                """features.feature_id, features.feature_type, features.value """
-                """FROM caws_task WHERE (task_status='COMPLETED') """
-                """AND (endpoint_id = :endpoint_id)  AND (time_began > :start_time) """
-                """LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id""")
-            query = query.bindparams({"endpoint_id": endpoint.compute_endpoint_id, "start_time": endpoint.start_time})
+            query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
+                """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                """AND (endpoint_id = :endpoint_id)  AND (time_completed > :start_time)) """)
+            query = query.bindparams(endpoint_id=endpoint.compute_endpoint_id, start_time=prev_query)
             caws_task = pd.read_sql(query, connection)
 
             query = text("""SELECT * FROM transfer LIMIT 1000""")
@@ -216,15 +224,17 @@ class Predictor:
             # I don't delete the transfer models here
 
         tasks, static_power, energy_consumed = self.endpoints[endpoint.name].train(tasks, resources, energy, caws_task)
+        print(tasks)
 
-        with self.Session() as conn:
-            meta = self.eng.MetaData(conn)
-            method = self.create_method(meta)
-            tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_sql("caws_tasks", conn, if_exists='append', method=method)
+        with self.Session() as session:
+            connection = session.connection()
+            meta = MetaData(bind=connection)
+            method = self.create_update(meta)
+            tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_sql("caws_tasks", connection, if_exists='append', method=method)
 
-            sql_table = self.eng.Table("caws_endpoint", meta, autoload=True)
-            update_stmt = update(sql_table).values({"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed})
-            conn.exectue(update_stmt)
+            sql_table = Table("caws_endpoint", meta, autoload=True)
+            update_stmt = update(sql_table)
+            session.execute(update_stmt, {"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed})
         
         self.last_update_time[endpoint.name] = datetime.now()
 

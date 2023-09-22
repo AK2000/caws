@@ -4,12 +4,13 @@ import math
 import caws
 from caws import CawsTaskInfo
 from caws.predictors.predictor import Predictor, Prediction
+from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
 from util_funcs import add, transfer_file
 
-caws_database_url = os.environ("ENDPOINT_MONITOR_DEFAULT")
+caws_database_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
 
 def test_predictor_empty():
     caws_db = CawsDatabaseManager(caws_database_url)
@@ -40,6 +41,8 @@ def test_predictor_init():
         compute_id="6754af96-7afa-4c81-b7ef-cf54587f02fa",
         transfer_id="12906d72-48e0-11ee-8135-15041d20ea55"
     )
+    endpoints = [endpoint]
+
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, strategy) as executor:
         fut = executor.submit(add, 1, 2)
@@ -59,6 +62,7 @@ def test_predictor_update():
         compute_id="6754af96-7afa-4c81-b7ef-cf54587f02fa",
         transfer_id="12906d72-48e0-11ee-8135-15041d20ea55"
     )
+    endpoints = [endpoint]
 
     predictor = Predictor([endpoint,], caws_database_url)
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
@@ -82,4 +86,4 @@ def test_predictor_transfer():
     pass
 
 if __name__ == "__main__":
-    test_predictor_empty()
+    test_predictor_update()
