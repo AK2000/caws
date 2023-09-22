@@ -79,7 +79,10 @@ class EndpointModel:
             regr.fit(df_combined[["perf_instructions_retired", "perf_llc_misses"]].values, df_combined["power"])
             df_combined["pred_power"] = regr.predict(df_combined[["perf_instructions_retired", "perf_llc_misses"]].values)
 
-            self.static_power = (alpha * self.static_power) + ((1-alpha) * regr.intercept_)
+            if self.static_power is None:
+                self.static_power = regr.intercept_
+            else:
+                self.static_power = (alpha * self.static_power) + ((1-alpha) * regr.intercept_)
 
             for i in range(len(df_split_clean[block_id])):
                 worker_df = df_split_clean[block_id][i]
@@ -146,6 +149,8 @@ class EndpointModel:
 
     def predict_cold_start(self):
         cold_start_tasks = self.tasks[self.tasks["endpoint_status"] == "COLD"]
+        if len(cold_start_tasks) == 0: # No information, or endpoint is always warm
+            return 0
         return (cold_start_tasks["task_try_time_running"] - cold_start_tasks["time_began"]).mean()
 
     def predict_static_power(self):
@@ -168,6 +173,7 @@ class Predictor:
             query = text("""SELECT * FROM caws_endpoint WHERE endpoint_id in :endpoint_ids""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
             endpoint_df = pd.read_sql(query, connection)
+            endpoint_df = endpoint_df.set_index("endpoint_id")
 
             query = text("""SELECT * FROM transfer LIMIT 1000""")
             self.transfers = pd.read_sql(query, connection)
@@ -176,7 +182,9 @@ class Predictor:
         self.endpoints = {}
         for endpoint in endpoints:
             tasks =  func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
-            self.endpoints[endpoint.name] = EndpointModel(tasks)
+            static_power = endpoint_df.loc[endpoint.compute_endpoint_id]["static_power"]
+            energy_consumed = endpoint_df.loc[endpoint.compute_endpoint_id]["energy_consumed"]
+            self.endpoints[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
         
         self.last_update_time = {}
         self.transfer_models = {} # Build transfer models on demand
@@ -191,7 +199,7 @@ class Predictor:
     def update(self, endpoint):
         prev_query = self.last_update_time.get(endpoint.name, None)
 
-        tasks, resources, energy = endpoint.collect_monitoring_info()
+        tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
         with self.Session() as connection:
             query = text("""SELECT caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status """
                 """features.feature_id, features.feature_type, features.value """

@@ -77,6 +77,7 @@ class CawsExecutor(object):
                 "endpoint_id": endpoint.endpoint_id,
                 "transfer_endpoint_id": endpoint.transfer_endpoint_id,
                 "tasks_run": 0,
+                "energy_consumed": 0,
             }
             msgs.append(msg)
         self.caws_db.update_endpoints(msgs)
