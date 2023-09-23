@@ -193,7 +193,7 @@ class Predictor:
 
             query = text("""SELECT * FROM transfer LIMIT 1000""")
             self.transfers = pd.read_sql(query, connection)
-            self.transfers["runtime"] = self.transfers["time_completed"] - self.transfers["time_submit"]
+            self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
 
         self.endpoint_models = {}
         for endpoint in self.endpoints:
@@ -217,7 +217,7 @@ class Predictor:
 
             query = text("""SELECT * FROM transfer LIMIT 1000""")
             self.transfers = pd.read_sql(query, connection)
-            self.transfers["runtime"] = self.transfers["time_completed"] - self.transfers["time_submit"]
+            self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
             # I don't delete the transfer models here
 
         tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
@@ -227,8 +227,7 @@ class Predictor:
             session.execute(update(CawsDatabase.CawsTask), values)
             session.commit()
 
-            update_stmt = update(CawsDatabase.CawsEndpoint)
-            session.execute(update_stmt, {"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed})
+            session.execute(update(CawsDatabase.CawsEndpoint), [{"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed}])
             session.commit()
 
         self.last_update_time[endpoint.name] = datetime.now()
@@ -248,14 +247,15 @@ class Predictor:
 
         transfers = self.transfers[
             (self.transfers["src_endpoint_id"] == src_endpoint.transfer_endpoint_id) \
-            &  (self.transfers["dst_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
+            &  (self.transfers["dest_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
         
         X = transfers[["bytes_transferred", "files_transferred"]].to_numpy()
-        y = transfers["runtime"]
-        w, _, _, _ = np.linalg.lstsq(X, y)
+        X = np.c_[X, np.ones(X.shape[0])]
+        y = transfers["runtime"].to_numpy()
+        w, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
 
         self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
-        pred_runtime = np.array([size, files]) @ w
+        pred_runtime = np.array([size, files, 1]) @ w
 
         # TODO: Implement energy prediction
         return Prediction(pred_runtime, 0)        

@@ -8,6 +8,7 @@ from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
+from caws.transfer import TransferManager
 from util_funcs import add, transfer_file
 
 caws_database_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
@@ -83,6 +84,7 @@ def test_predictor_features():
 
 def test_predictor_transfer():
     dbm = CawsDatabaseManager(caws_database_url)
+    dbm.start()
 
     source_name = "caws-dev_ep1"
     source_compute_id = "6754af96-7afa-4c81-b7ef-cf54587f02fa"
@@ -94,7 +96,7 @@ def test_predictor_transfer():
 
     source = caws.Endpoint(source_name,
                            source_compute_id,
-                           endpoint_path="/home/alokvk2/research"
+                           endpoint_path="/home/alokvk2/research",
                            transfer_id=source_transfer_id,
                            monitoring_avail=True)
 
@@ -112,7 +114,7 @@ def test_predictor_transfer():
             "energy_consumed": 0
         }
         msgs.append(msg)
-    dbm.update_endpoints([msgs])
+    dbm.update_endpoints(msgs)
     predictor = Predictor([source, destination], caws_database_url)
     predictor.start()
 
@@ -122,7 +124,7 @@ def test_predictor_transfer():
     def failure_callback(transfer_record):
         assert False, f"Transfer failed: {transfer_record.error}"
 
-    transfer_manager = TransferManager(caws_db=dbm, log_level=logging.DEBUG)
+    transfer_manager = TransferManager(caws_db=dbm)
     transfer_manager.start()
 
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
@@ -135,8 +137,9 @@ def test_predictor_transfer():
                               failure_callback)
     transfer_manager.submit_pending_transfers()
     transfer_manager.shutdown()
+    dbm.shutdown()
 
-    predictor.update(endpoint)
+    predictor.update(source)
     result = predictor.predict_transfer(source, destination, caws_path.size, 1)
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
@@ -144,4 +147,4 @@ def test_predictor_transfer():
 
 
 if __name__ == "__main__":
-    test_predictor_update()
+    test_predictor_transfer()
