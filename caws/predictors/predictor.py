@@ -1,5 +1,7 @@
 from collections import defaultdict, namedtuple
 from datetime import datetime
+import os
+import json
 
 import numpy as np
 import numpy.linalg
@@ -174,6 +176,23 @@ class Predictor:
         self.caws_database_url = caws_database_url
         self.endpoints = endpoints
 
+        self.transfer_models = {}
+        directory = os.path.dirname(os.path.realpath(__file__))
+        transfer_config_file = os.path.join(directory, "transfer_config.json")
+        with open(transfer_config_file) as fp:
+            transfer_energy_info = json.load(fp)
+
+        n_switches = transfer_energy_info["defaults"]["num_switches"]
+        edge_routers = transfer_energy_info["defaults"]["edge_routers"]
+        hardware_models = transfer_energy_info["hardware_models"]
+        for model in transfer_energy_info["transfer_models"]:
+            key = (model["src"], model["dest"])
+            core_routers = model["num_hops"] - edge_routers
+            energy_per_bit = (n_switches * hardware_models["switch"])\
+                             + (edge_routers * hardware_models["edge_router"])\
+                             + (core_routers * hardware_models["core_router"])
+            self.transfer_models[key] = energy_per_bit
+
     def start(self):
         self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
         self.Session = sessionmaker(bind=self.eng)
@@ -257,8 +276,8 @@ class Predictor:
         self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
         pred_runtime = np.array([size, files, 1]) @ w
 
-        # TODO: Implement energy prediction
-        return Prediction(pred_runtime, 0)        
+        pred_energy = self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] * size
+        return Prediction(pred_runtime, pred_energy)        
         
     def predict_static_power(self, endpoint):
         return self.endpoint_models[endpoint.name].predict_static_power()

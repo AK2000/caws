@@ -1,7 +1,7 @@
 {
     "defaults": {
         "num_switches": 6,
-        "endge_routers": 2
+        "edge_routers": 2
     },
     "hardware_models": {
         "switch": 20,
