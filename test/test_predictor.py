@@ -59,9 +59,8 @@ def test_predictor_update():
     assert not math.isnan(result.energy)
     assert not math.isnan(predictor.predict_static_power(endpoint))
 
-def test_predictor_execution():
+def test_predictor_features():
     pass
-
 
 def test_predictor_transfer():
     pass

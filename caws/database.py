@@ -116,8 +116,8 @@ class CawsDatabase:
         time_scheduled = Column(DateTime, nullable=True)
         time_began = Column(DateTime, nullable=True)
         time_completed = Column(DateTime, nullable=True)
-        running_duration = Column(DateTime, nullable=True)
-        energy_consumed = Column(DateTime, nullable=True)
+        running_duration = Column(Float, nullable=True)
+        energy_consumed = Column(Float, nullable=True)
 
     class CawsEndpoint(Base):
         __tablename__ = "caws_endpoint"

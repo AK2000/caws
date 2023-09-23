@@ -4,6 +4,7 @@ import json
 import sqlalchemy
 from sqlalchemy import select, or_, and_
 import pandas as pd
+import numpy as np
 import os
 import datetime
 from importlib.resources import files
@@ -158,8 +159,12 @@ class Endpoint:
             task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"])
             task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"])
 
+            prev_timestamp = prev_timestamp - datetime.timedelta(seconds=1)
             resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
-            resources_df = pd.read_sql(select(mdb.Resource).where(and_(or_(*resource_run_ids_or), mdb.Resource.timestamp > prev_timestamp)), conn)
+            resources_df = pd.read_sql(select(mdb.Resource).where(
+                and_(
+                    or_(*resource_run_ids_or),
+                    mdb.Resource.timestamp > prev_timestamp)), conn)
 
             energy_run_ids_or = [mdb.Energy.run_id == run_id[0] for run_id in run_ids]
             energy_df = pd.read_sql(select(mdb.Energy).where(and_(or_(*energy_run_ids_or), mdb.Energy.timestamp > prev_timestamp)), conn)

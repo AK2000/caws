@@ -14,6 +14,7 @@ import sqlalchemy
 from sqlalchemy import text, bindparam, update, MetaData, Table
 from sqlalchemy.orm import sessionmaker
 
+from caws.database import CawsDatabase
 
 Prediction = namedtuple("Prediction", ["runtime", "energy"])
 
@@ -34,10 +35,13 @@ class EndpointModel:
         self.tasks = tasks
         self.static_power = static_power
         self.energy_consumed = energy_consumed
+        self.alpha = alpha
 
         self.regressions = {}
 
     def train(self, tasks, resources, energy, caws_df):
+        resources = resources.dropna(subset=["perf_unhalted_core_cycles", "perf_unhalted_reference_cycles", "perf_llc_misses", "perf_instructions_retired"])
+
         energy["timestamp"] = pd.to_datetime(energy['timestamp'])
         energy["power"] = energy["total_energy"] / energy["duration"]
         energy = energy.sort_values("timestamp", ignore_index=True)
@@ -70,7 +74,7 @@ class EndpointModel:
             df = df_split_clean[block_id][0]
             for i in range(1, len(df_split_clean[block_id])):
                 df = sum_resources(df, df_split_clean[block_id][i])
-            
+
             # TODO: Should I combine blocks/runs to create regression?
             df_combined = pd.merge_asof(energy[energy["block_id"] == block_id], df, on="timestamp", direction="backward")
             df_combined.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -82,7 +86,7 @@ class EndpointModel:
             if self.static_power is None:
                 self.static_power = regr.intercept_
             else:
-                self.static_power = (alpha * self.static_power) + ((1-alpha) * regr.intercept_)
+                self.static_power = (self.alpha * self.static_power) + ((1-self.alpha) * regr.intercept_)
 
             for i in range(len(df_split_clean[block_id])):
                 worker_df = df_split_clean[block_id][i]
@@ -120,37 +124,37 @@ class EndpointModel:
 
         tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
         caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began"]]
-        print(tasks)
 
         tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
-        self.tasks = self.tasks.append(tasks)
+        self.tasks = pd.concat([self.tasks, tasks])
         self.regressions = {}
         return tasks, self.static_power, self.energy_consumed
 
     def predict_func(self, func_name, features):
         if func_name not in self.regressions:
             func_tasks = self.tasks[self.tasks["func_name"] == func_name]
+            func_tasks = func_tasks.dropna(subset=["running_duration", "energy_consumed"])
             if len(func_tasks) == 0:
                 return None
 
-            func_tasks['value'].fillna(1)
+            # func_tasks["value"] = func_tasks['value'].fillna(1)
             func_tasks = func_tasks.sort_values("feature_id")
             func_tasks = func_tasks.groupby("caws_task_id").agg(
                 {'running_duration': 'first', 'energy_consumed': 'first', 'value': list})
 
             data_matrix = np.stack(func_tasks["value"].values)
             (n, f) = data_matrix.shape
-            print(data_matrix)
             data_matrix = np.c_[data_matrix, np.ones(n)]
+            data_matrix = data_matrix[:, ~pd.isnull(data_matrix).any(axis=0)]
             y_matrix = func_tasks[["running_duration", "energy_consumed"]].to_numpy()
-            print(y_matrix)
+            w, _, _, _ = np.linalg.lstsq(data_matrix.astype(np.float64),  y_matrix, rcond=None)
 
-            w, _, _, _ = np.linalg.lstsq(data_matrix, y_matrix)
             self.regressions[func_name] = w
         else:
             w = self.regressions[func_name]
 
-        y = features @ x
+        features.append(1)
+        y = np.array(features) @ w
         return Prediction(y[0], y[1])
 
     def predict_cold_start(self):
@@ -168,8 +172,9 @@ class Predictor:
         self.last_update_time = {}
         self.transfer_models = {} # Build transfer models on demand
         self.caws_database_url = caws_database_url
+        self.endpoints = endpoints
 
-    def start(self)
+    def start(self):
         self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
         self.Session = sessionmaker(bind=self.eng)
         with self.Session() as session:
@@ -178,11 +183,11 @@ class Predictor:
                 """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
                 """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
                 """AND (endpoint_id in :endpoint_ids))""")
-            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
+            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
             func_to_tasks = pd.read_sql(query, connection)
 
             query = text("""SELECT * FROM caws_endpoint WHERE endpoint_id in :endpoint_ids""")
-            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
+            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
             endpoint_df = pd.read_sql(query, connection)
             endpoint_df = endpoint_df.set_index("endpoint_id")
 
@@ -190,22 +195,12 @@ class Predictor:
             self.transfers = pd.read_sql(query, connection)
             self.transfers["runtime"] = self.transfers["time_completed"] - self.transfers["time_submit"]
 
-        self.endpoints = {}
-        for endpoint in endpoints:
+        self.endpoint_models = {}
+        for endpoint in self.endpoints:
             tasks =  func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
             static_power = endpoint_df.loc[endpoint.compute_endpoint_id]["static_power"]
             energy_consumed = endpoint_df.loc[endpoint.compute_endpoint_id]["energy_consumed"]
-            self.endpoints[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
-    
-    def create_update(self, meta):
-        def method(table, conn, keys, data_iter):
-            sql_table = Table(table.name, meta, autoload=True)
-            values = [dict(zip(keys, data)) for data in data_iter]
-            print(values)
-            update_stmt = update(sql_table)
-            print(update_stmt)
-            conn.execute(update_stmt, values)
-        return method   
+            self.endpoint_models[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
 
     def update(self, endpoint):
         prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
@@ -225,24 +220,22 @@ class Predictor:
             self.transfers["runtime"] = self.transfers["time_completed"] - self.transfers["time_submit"]
             # I don't delete the transfer models here
 
-        tasks, static_power, energy_consumed = self.endpoints[endpoint.name].train(tasks, resources, energy, caws_task)
-        print(tasks)
+        tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
 
         with self.Session() as session:
-            connection = session.connection()
-            meta = MetaData(bind=connection)
-            method = self.create_update(meta)
-            tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_sql("caws_tasks", connection, if_exists='append', method=method)
+            values = tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_dict('records')
+            session.execute(update(CawsDatabase.CawsTask), values)
+            session.commit()
 
-            sql_table = Table("caws_endpoint", meta, autoload=True)
-            update_stmt = update(sql_table)
+            update_stmt = update(CawsDatabase.CawsEndpoint)
             session.execute(update_stmt, {"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed})
-        
+            session.commit()
+
         self.last_update_time[endpoint.name] = datetime.now()
 
     def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
-        pred = self.endpoints[endpoint.name].predict_func(task.function_name, task.features)
+        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, task.features)
         if pred is None:
             # TODO: Implement low-rank matrix completion for missing values
             return None
@@ -268,7 +261,7 @@ class Predictor:
         return Prediction(pred_runtime, 0)        
         
     def predict_static_power(self, endpoint):
-        return self.endpoints[endpoint.name].predict_static_power()
+        return self.endpoint_models[endpoint.name].predict_static_power()
 
     def predict_cold_start(self, endpoint):
-        return self.endpoints[endpoint.name].predict_cold_start()
+        return self.endpoint_models[endpoint.name].predict_cold_start()
