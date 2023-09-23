@@ -1,0 +1,33 @@
+{
+    "defaults": {
+        "num_switches": 6,
+        "endge_routers": 2
+    },
+    "hardware_models": {
+        "switch": 20,
+        "edge_router": 8.1,
+        "core_router": 2.7
+    },
+    "transfer_models": [
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "9032dd3a-e841-4687-a163-2720da731b5b",
+            "num_hops": 19
+        },
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "2fde89c0-6fb4-11eb-8c47-0eb1aa8d4337",
+            "num_hops": 17
+        },
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "num_hops": -1
+        },
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "num_hops": 33
+        }
+    ]
+}
