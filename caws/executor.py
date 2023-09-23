@@ -207,7 +207,7 @@ class CawsExecutor(object):
         # Must be done last to avoid race condition
         task.gc_future.add_done_callback(lambda fut : self._task_complete_callback(task, fut))
 
-    def _transfer_error(task, endpoint):
+    def _transfer_error(self, task, endpoint):
         task.task_status = TaskStatus.ERROR
         task.timing_info["completed"] = datetime.now()
         self.caws_db.send_task_message(task)
