@@ -20,6 +20,7 @@ dependencies = [
     "geoip2",
     "click",
     "scikit-learn"
+    "fancyimpute @ git+https://github.com/iskandr/fancyimpute.git"
 ]
 dynamic = ["version"]
 

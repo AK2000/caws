@@ -53,7 +53,6 @@ def test_predictor_update():
         assert fut.result() == 3
         task_info = fut.task_info
     
-    predictor.update(endpoint)
     result = predictor.predict_execution(endpoint, task_info)
 
     assert not math.isnan(result.runtime)
@@ -75,7 +74,6 @@ def test_predictor_features():
         assert fut.result() == 3
         task_info = fut.task_info
     
-    predictor.update(endpoint)
     result = predictor.predict_execution(endpoint, task_info)
 
     assert not math.isnan(result.runtime)
@@ -139,7 +137,7 @@ def test_predictor_transfer():
     transfer_manager.shutdown()
     dbm.shutdown()
 
-    predictor.update(source)
+    predictor.update()
     result = predictor.predict_transfer(source, destination, caws_path.size, 1)
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)

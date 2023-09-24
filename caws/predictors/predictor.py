@@ -7,10 +7,9 @@ import numpy as np
 import numpy.linalg
 from scipy import interpolate, integrate
 from scipy.stats import bootstrap
-
 import pandas as pd
-
 from sklearn.linear_model import ElasticNet
+from fancyimpute import SoftImpute, BiScaler
 
 import sqlalchemy
 from sqlalchemy import text, bindparam, update, MetaData, Table
@@ -137,7 +136,7 @@ class EndpointModel:
             func_tasks = self.tasks[self.tasks["func_name"] == func_name]
             func_tasks = func_tasks.dropna(subset=["running_duration", "energy_consumed"])
             if len(func_tasks) == 0:
-                return None
+                return Prediction(None, None)
 
             # func_tasks["value"] = func_tasks['value'].fillna(1)
             func_tasks = func_tasks.sort_values("feature_id")
@@ -192,6 +191,8 @@ class Predictor:
                              + (edge_routers * hardware_models["edge_router"])\
                              + (core_routers * hardware_models["core_router"])
             self.transfer_models[key] = energy_per_bit
+        
+        self.embedding_matrix = None
 
     def start(self):
         self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
@@ -204,6 +205,7 @@ class Predictor:
                 """AND (endpoint_id in :endpoint_ids))""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
             func_to_tasks = pd.read_sql(query, connection)
+            func_to_tasks = func_to_tasks.dropna(subset=["running_duration", "energy_consumed"])
 
             query = text("""SELECT * FROM caws_endpoint WHERE endpoint_id in :endpoint_ids""")
             query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
@@ -220,43 +222,94 @@ class Predictor:
             static_power = endpoint_df.loc[endpoint.compute_endpoint_id]["static_power"]
             energy_consumed = endpoint_df.loc[endpoint.compute_endpoint_id]["energy_consumed"]
             self.endpoint_models[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
+    
+    def create_embedding_table(self, func_to_tasks, n_examples=10):
+        func_to_tasks = func_to_tasks.sort_values("feature_id")
+        func_to_tasks = func_to_tasks.groupby("caws_task_id").agg(
+            {'func_name': 'first', 'running_duration': 'first', 'energy_consumed': 'first', 'value': list})
+        func_to_tasks["count"] = 1
+        func_to_tasks = func_to_tasks.groupby("func_name").agg(
+            {'value': 'first', "count": "count"}).sort_values("count", ascending=False)
+        func_to_tasks = func_to_tasks.iloc[:n_examples].reset_index()
+        
+        embedding_matrix = np.zeros(2, n_examples, len(self.endpoints))
+        for i, endpoint_model in enumerate(self.endpoint_model):
+            result_df = func_to_tasks.apply(lambda r: list(endpoint_model.predict_func(r.func_name, r.value)))
+            embedding_matrix[0, i, :] = result_df.iloc[:, 0].to_numpy()
+            embedding_matrix[1, i, :] = result_df.iloc[:, 1].to_numpy()
 
-    def update(self, endpoint):
-        prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
+    def update(self):
+        for endpoint in self.endpoints:
+            prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
 
-        tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
-        with self.Session() as session:
-            connection = session.connection()
-            query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
-                """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
-                """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
-                """AND (endpoint_id = :endpoint_id)  AND (time_completed > :start_time)) """)
-            query = query.bindparams(endpoint_id=endpoint.compute_endpoint_id, start_time=prev_query)
-            caws_task = pd.read_sql(query, connection)
+            tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
+            with self.Session() as session:
+                connection = session.connection()
+                query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                    """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
+                    """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                    """AND (endpoint_id = :endpoint_id)  AND (time_completed > :start_time)) """)
+                query = query.bindparams(endpoint_id=endpoint.compute_endpoint_id, start_time=prev_query)
+                caws_task = pd.read_sql(query, connection)
+                
+            tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
 
-            query = text("""SELECT * FROM transfer LIMIT 1000""")
-            self.transfers = pd.read_sql(query, connection)
-            self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
-            # I don't delete the transfer models here
+            with self.Session() as session:
+                values = tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_dict('records')
+                session.execute(update(CawsDatabase.CawsTask), values)
+                session.commit()
+                session.execute(update(CawsDatabase.CawsEndpoint), [{"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed}])
+                session.commit()
 
-        tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
+            self.last_update_time[endpoint.name] = datetime.now()
 
-        with self.Session() as session:
-            values = tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_dict('records')
-            session.execute(update(CawsDatabase.CawsTask), values)
-            session.commit()
-
-            session.execute(update(CawsDatabase.CawsEndpoint), [{"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed}])
-            session.commit()
-
-        self.last_update_time[endpoint.name] = datetime.now()
+        query = text("""SELECT * FROM transfer LIMIT 1000""")
+        self.transfers = pd.read_sql(query, connection)
+        self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
+        # I don't delete the transfer models here
 
     def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
         pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, task.features)
-        if pred is None:
-            # TODO: Implement low-rank matrix completion for missing values
-            return None
+        if pred.runtime is None or pred.energy is None:
+            if self.embedding_matrix is None:
+                with self.Session() as session:
+                    connection = session.connection()
+                    query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                        """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
+                        """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                        """AND (endpoint_id in :endpoint_ids))""")
+                    query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
+                    func_to_tasks = pd.read_sql(query, connection)
+                    func_to_tasks = func_to_tasks.dropna(subset=["running_duration", "energy_consumed"])
+
+                if len(func_to_tasks) < 10:
+                    return None
+
+                self.embedding_matrix = self.create_embedding_table(func_to_tasks)
+
+            new_features = np.zeros(2, len(self.endpoints))
+            for i, model in enumerate(self.endpoint_model):
+                result = model.predict_func(task.function_name, task.features)
+                new_features[0, i] = result[0]
+                new_features[1, i] = result[1]
+
+            self.embedding_matrix = np.concatenate((self.embedding_matrix, new_features), axis=2)
+
+            X_incomplete_normalized = BiScaler().fit_transform(self.embedding_matrix[0])
+            runtime_filled = SoftImpute().fit_transform(X_incomplete_normalized)
+            X_incomplete_normalized = BiScaler().fit_transform(self.embedding_matrix[1])
+            energy_filled = SoftImpute().fit_transform(X_incomplete_normalized)
+
+            for i, other in enumerate(self.endpoints):
+                if endpoint.name == other.name:
+                    break
+            result = Predictor(runtime_filled[i, -1], energy_filled[i, -1])
+
+            # Trim embedding matrix again
+            self.embedding_matrix = np.unique(self.embedding_matrix, axis=2)
+
+            return result
 
         return pred
 

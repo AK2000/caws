@@ -36,7 +36,7 @@ class CawsExecutor(object):
     endpoints: list[Endpoint]
     strategy: Strategy
     _task_watchdog_sleep: float = 0.2
-    _endpoint_watchdog_sleep: float = 5
+    _endpoint_watchdog_sleep: float = 1
     _task_scheduling_sleep: float = 0.5
 
     scheduling_lock = Lock() # Use to manually batch tasks
@@ -49,7 +49,7 @@ class CawsExecutor(object):
                  predictor = None,
                  caws_database_url: str | None = None,
                  task_watchdog_sleep: float = 0.2,
-                 endpoint_watchdog_sleep: float = 2):
+                 endpoint_watchdog_sleep: float = 1):
         
         self.endpoints = endpoints
         self.strategy = strategy
@@ -99,11 +99,15 @@ class CawsExecutor(object):
 
     def shutdown(self):
         print("Executor shutting down")
+        if self.predictor:
+            self.predictor.update()
+
         self._kill_event.set()
-        self._task_scheduler.join()
-        self._endpoint_watchdog.join()
         self._transfer_manager.shutdown()
         self.caws_db.shutdown()
+        self._task_scheduler.join()
+        self._endpoint_watchdog.join()
+        
 
     def submit(self, fn: Callable, *args, deadline=None, resources=None, **kwargs):
         if isinstance(fn, CawsTask):
@@ -239,7 +243,7 @@ class CawsExecutor(object):
                     self._send_backup_tasks()
 
             # Sleep before checking statuses again
-            time.sleep(5)
+            time.sleep(self._endpoint_watchdog_sleep)
 
     def _send_backup_tasks(self):
         pass
