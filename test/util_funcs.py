@@ -33,7 +33,7 @@ gemm = mainify(gemm)
 
 def loop(iters: int):
     s = 0
-    for i in iters:
+    for i in range(iters):
         s += i
     return s
 loop = mainify(loop)

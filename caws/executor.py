@@ -99,12 +99,14 @@ class CawsExecutor(object):
 
     def shutdown(self):
         print("Executor shutting down")
-        if self.predictor:
-            self.predictor.update()
-
         self._kill_event.set()
         self._transfer_manager.shutdown()
         self.caws_db.shutdown()
+
+        if self.predictor:
+            time.sleep(2)
+            self.predictor.update()
+
         self._task_scheduler.join()
         self._endpoint_watchdog.join()
         

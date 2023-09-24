@@ -39,7 +39,7 @@ class CawsDatabase:
         self.Session = sessionmaker(bind=self.eng)
 
         global insert
-        if self.eng.dialect.name == 'postrgesql':
+        if self.eng.dialect.name == 'postgresql':
             from sqlalchemy.dialects.postgresql import insert
         elif self.eng.dialect.name == 'sqlite':
             from sqlalchemy.dialects.sqlite import insert
@@ -205,7 +205,6 @@ class CawsDatabaseManager(metaclass=Singleton):
         msg["time_scheduled"] = task.timing_info.get("scheduled")
         msg["time_began"] = task.timing_info.get("began")
         msg["time_completed"] = task.timing_info.get("completed")
-
         self.task_msg_queue.put(msg)
 
     def send_transfer_message(self, transfer_info: dict[Any]):

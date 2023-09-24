@@ -2,6 +2,7 @@ from collections import defaultdict, namedtuple
 from datetime import datetime
 import os
 import json
+import time
 
 import numpy as np
 import numpy.linalg
@@ -9,7 +10,7 @@ from scipy import interpolate, integrate
 from scipy.stats import bootstrap
 import pandas as pd
 from sklearn.linear_model import ElasticNet
-from fancyimpute import SoftImpute, BiScaler
+from fancyimpute import SoftImpute, NuclearNormMinimization
 
 import sqlalchemy
 from sqlalchemy import text, bindparam, update, MetaData, Table
@@ -233,16 +234,17 @@ class Predictor:
             {'value': 'first', "count": "count"}).sort_values("count", ascending=False)
         func_to_tasks = func_to_tasks.iloc[:n_examples].reset_index()
         
-        embedding_matrix = np.zeros(2, n_examples, len(self.endpoints))
-        for i, endpoint_model in enumerate(self.endpoint_model):
-            result_df = func_to_tasks.apply(lambda r: list(endpoint_model.predict_func(r.func_name, r.value)))
+        embedding_matrix = np.zeros((2, len(self.endpoints), func_to_tasks.shape[0]))
+        for i, endpoint_model in enumerate(self.endpoint_models.values()):
+            result_df = func_to_tasks.apply(lambda r: list(endpoint_model.predict_func(r.func_name, [f for f in r.value if f is not None])), axis=1, result_type="expand")
             embedding_matrix[0, i, :] = result_df.iloc[:, 0].to_numpy()
             embedding_matrix[1, i, :] = result_df.iloc[:, 1].to_numpy()
+
+        return embedding_matrix
 
     def update(self):
         for endpoint in self.endpoints:
             prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
-
             tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
             with self.Session() as session:
                 connection = session.connection()
@@ -252,9 +254,10 @@ class Predictor:
                     """AND (endpoint_id = :endpoint_id)  AND (time_completed > :start_time)) """)
                 query = query.bindparams(endpoint_id=endpoint.compute_endpoint_id, start_time=prev_query)
                 caws_task = pd.read_sql(query, connection)
-                
-            tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
 
+            tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
+            tasks = tasks.dropna(subset=["caws_task_id"]) #TODO: Fix clock synchronization
+            
             with self.Session() as session:
                 values = tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_dict('records')
                 session.execute(update(CawsDatabase.CawsTask), values)
@@ -264,10 +267,12 @@ class Predictor:
 
             self.last_update_time[endpoint.name] = datetime.now()
 
-        query = text("""SELECT * FROM transfer LIMIT 1000""")
-        self.transfers = pd.read_sql(query, connection)
-        self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
-        # I don't delete the transfer models here
+        with self.Session() as session:
+            connection = session.connection()
+            query = text("""SELECT * FROM transfer LIMIT 1000""")
+            self.transfers = pd.read_sql(query, connection)
+            self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
+            # I don't delete the transfer models here
 
     def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
@@ -289,23 +294,21 @@ class Predictor:
 
                 self.embedding_matrix = self.create_embedding_table(func_to_tasks)
 
-            new_features = np.zeros(2, len(self.endpoints))
-            for i, model in enumerate(self.endpoint_model):
+            new_features = np.zeros((2, len(self.endpoints), 1))
+            for i, model in enumerate(self.endpoint_models.values()):
                 result = model.predict_func(task.function_name, task.features)
-                new_features[0, i] = result[0]
-                new_features[1, i] = result[1]
+                new_features[0, i, 0] = result[0]
+                new_features[1, i, 0] = result[1]
 
             self.embedding_matrix = np.concatenate((self.embedding_matrix, new_features), axis=2)
 
-            X_incomplete_normalized = BiScaler().fit_transform(self.embedding_matrix[0])
-            runtime_filled = SoftImpute().fit_transform(X_incomplete_normalized)
-            X_incomplete_normalized = BiScaler().fit_transform(self.embedding_matrix[1])
-            energy_filled = SoftImpute().fit_transform(X_incomplete_normalized)
+            runtime_filled = NuclearNormMinimization().fit_transform(self.embedding_matrix[0])
+            energy_filled = NuclearNormMinimization().fit_transform(self.embedding_matrix[1])
 
             for i, other in enumerate(self.endpoints):
                 if endpoint.name == other.name:
                     break
-            result = Predictor(runtime_filled[i, -1], energy_filled[i, -1])
+            result = Prediction(runtime_filled[i, -1], energy_filled[i, -1])
 
             # Trim embedding matrix again
             self.embedding_matrix = np.unique(self.embedding_matrix, axis=2)

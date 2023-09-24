@@ -143,7 +143,7 @@ def test_predictor_transfer():
     assert not math.isnan(result.energy)
 
 def test_predictor_impute():
-    iters = 16
+    iters = 2
 
     desktop = caws.Endpoint(
         "desktop",
@@ -171,13 +171,17 @@ def test_predictor_impute():
         futures = []
         for i in range(iters):
             futures.append(executor.submit(loop, 10000))
+
+        for f in futures:
+            print(f.result())
         concurrent.futures.wait(futures)
         task_info = futures[0].task_info
     
     result = predictor.predict_execution(theta, task_info)
+    print(result)
 
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
 
 if __name__ == "__main__":
-    test_predictor_transfer()
+    test_predictor_impute()
