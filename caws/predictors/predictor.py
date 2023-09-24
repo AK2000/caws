@@ -284,7 +284,7 @@ class Predictor:
                     func_to_tasks = pd.read_sql(query, connection)
                     func_to_tasks = func_to_tasks.dropna(subset=["running_duration", "energy_consumed"])
 
-                if len(func_to_tasks) < 10:
+                if len(func_to_tasks) == 0:
                     return None
 
                 self.embedding_matrix = self.create_embedding_table(func_to_tasks)

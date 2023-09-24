@@ -1,5 +1,6 @@
 import os
 import math
+import concurrent.futures
 
 import caws
 from caws import CawsTaskInfo
@@ -9,7 +10,7 @@ from caws.database import CawsDatabaseManager
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
 from caws.transfer import TransferManager
-from util_funcs import add, transfer_file
+from util_funcs import gemm, loop
 
 caws_database_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
 
@@ -127,7 +128,6 @@ def test_predictor_transfer():
 
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
     caws_path = CawsPath(source, file_path)
-    print(source.transfer_endpoint_id)
     transfer_record = transfer_manager.transfer([caws_path,],
                               destination,
                               "test_transfer",
@@ -142,9 +142,42 @@ def test_predictor_transfer():
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
 
-    print(result)
+def test_predictor_impute():
+    iters = 16
 
+    desktop = caws.Endpoint(
+        "desktop",
+        compute_id="6754af96-7afa-4c81-b7ef-cf54587f02fa",
+        transfer_id="12906d72-48e0-11ee-8135-15041d20ea55"
+    )
+    theta = caws.Endpoint(
+        "theta",
+        compute_id="14d17201-7380-4af8-b4e0-192cb9805274",
+        transfer_id="9032dd3a-e841-4687-a163-2720da731b5b"
+    )
 
+    endpoints = [desktop, theta]
+    predictor = Predictor(endpoints, caws_database_url)
+    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    with caws.CawsExecutor(endpoints, strategy, predictor=predictor) as executor:
+        futures = []
+        # Submit task to both endpoints
+        for i in range(2 * iters):
+            futures.append(executor.submit(gemm, 128))
+        concurrent.futures.wait(futures)
+
+    strategy = FCFS_RoundRobin(endpoints[:1], TransferPredictor(endpoints[:1]))
+    with caws.CawsExecutor(endpoints[:1], strategy, predictor=predictor) as executor:
+        futures = []
+        for i in range(iters):
+            futures.append(executor.submit(loop, 10000))
+        concurrent.futures.wait(futures)
+        task_info = futures[0].task_info
+    
+    result = predictor.predict_execution(theta, task_info)
+
+    assert not math.isnan(result.runtime)
+    assert not math.isnan(result.energy)
 
 if __name__ == "__main__":
     test_predictor_transfer()

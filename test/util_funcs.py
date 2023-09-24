@@ -31,6 +31,13 @@ def gemm(dim: int):
     return A @ B
 gemm = mainify(gemm)
 
+def loop(iters: int):
+    s = 0
+    for i in iters:
+        s += i
+    return s
+loop = mainify(loop)
+
 def transfer_file(path, _caws_output_dir):
     import os
 
