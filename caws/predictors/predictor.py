@@ -171,11 +171,11 @@ class EndpointModel:
 class Predictor:
     def __init__(self, endpoints, caws_database_url):
         self.last_update_time = {}
-        self.transfer_models = {} # Build transfer models on demand
+        self.transfer_runtime_models = {} # Build transfer models on demand
         self.caws_database_url = caws_database_url
         self.endpoints = endpoints
 
-        self.transfer_models = {}
+        self.transfer_energy_models = {}
         directory = os.path.dirname(os.path.realpath(__file__))
         transfer_config_file = os.path.join(directory, "transfer_config.json")
         with open(transfer_config_file) as fp:
@@ -190,9 +190,10 @@ class Predictor:
             energy_per_bit = (n_switches * hardware_models["switch"])\
                              + (edge_routers * hardware_models["edge_router"])\
                              + (core_routers * hardware_models["core_router"])
-            self.transfer_models[key] = energy_per_bit
+            self.transfer_energy_models[key] = energy_per_bit
         
         self.embedding_matrix = None
+            
 
     def start(self):
         self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
@@ -314,22 +315,21 @@ class Predictor:
         return pred
 
     def predict_transfer(self, src_endpoint, dst_endpoint, size, files):
-        if (src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id) in self.transfer_models:
-            pred_runtime = np.array([size, files]) @ self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)]
+        if (src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id) not in self.transfer_runtime_models:
+            transfers = self.transfers[
+                (self.transfers["src_endpoint_id"] == src_endpoint.transfer_endpoint_id) \
+                &  (self.transfers["dest_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
+            X = transfers[["bytes_transferred", "files_transferred"]].to_numpy()
+            X = np.c_[X, np.ones(X.shape[0])]
+            y = transfers["runtime"].to_numpy()
+            w, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+            self.transfer_runtime_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
 
-        transfers = self.transfers[
-            (self.transfers["src_endpoint_id"] == src_endpoint.transfer_endpoint_id) \
-            &  (self.transfers["dest_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
-        
-        X = transfers[["bytes_transferred", "files_transferred"]].to_numpy()
-        X = np.c_[X, np.ones(X.shape[0])]
-        y = transfers["runtime"].to_numpy()
-        w, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+        else:
+            w = self.transfer_runtime_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)]
 
-        self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
         pred_runtime = np.array([size, files, 1]) @ w
-
-        pred_energy = self.transfer_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] * size
+        pred_energy = self.transfer_energy_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] * size
         return Prediction(pred_runtime, pred_energy)        
         
     def predict_static_power(self, endpoint):

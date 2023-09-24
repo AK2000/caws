@@ -4,9 +4,9 @@
         "edge_routers": 2
     },
     "hardware_models": {
-        "switch": 20,
-        "edge_router": 8.1,
-        "core_router": 2.7
+        "switch": 0.020,
+        "edge_router": 0.0081,
+        "core_router": 0.0027
     },
     "transfer_models": [
         {

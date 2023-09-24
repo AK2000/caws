@@ -206,10 +206,11 @@ class TransferManager(object):
                     self.transfer_client = self.login_and_get_transfer_client(scopes=self.scopes)
                     res = self.transfer_client.submit_transfer(tdata)
                 else:
+                    print(err)
                     for task_record in task_records:
                         task_record.status = TransferStatus.PENDING
-                        if task_record.failed_callback is not None:
-                            task_record.failed_callback()
+                        if task_record.fail_callback is not None:
+                            task_record.fail_callback()
                         task_record.status = TransferStatus.FAILED
                     continue
                     

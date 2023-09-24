@@ -127,7 +127,7 @@ def test_predictor_transfer():
 
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
     caws_path = CawsPath(source, file_path)
-    caws_path_isolated = CawsPath(source, file_path, isolate=True)
+    print(source.transfer_endpoint_id)
     transfer_record = transfer_manager.transfer([caws_path,],
                               destination,
                               "test_transfer",
@@ -141,6 +141,8 @@ def test_predictor_transfer():
     result = predictor.predict_transfer(source, destination, caws_path.size, 1)
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
+
+    print(result)
 
 
 
