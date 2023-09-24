@@ -1,11 +1,22 @@
-import pandas as pd
-from sklearn.linear_model import ElasticNet
+from collections import defaultdict, namedtuple
+from datetime import datetime
+import os
+import json
+import time
+
 import numpy as np
+import numpy.linalg
 from scipy import interpolate, integrate
 from scipy.stats import bootstrap
+import pandas as pd
+from sklearn.linear_model import ElasticNet
+from fancyimpute import SoftImpute, NuclearNormMinimization
+
 import sqlalchemy
-from sqlalchemy import text, bindparam
-from collections import defaultdict, namedtuple
+from sqlalchemy import text, bindparam, update, MetaData, Table
+from sqlalchemy.orm import sessionmaker
+
+from caws.database import CawsDatabase
 
 Prediction = namedtuple("Prediction", ["runtime", "energy"])
 
@@ -22,14 +33,22 @@ def sum_resources(df1, df2, columns=["perf_unhalted_core_cycles", "perf_unhalted
     return df
 
 class EndpointModel:
-    def __init__(self, tasks, resources, energy, caws_df):
-        self.train(tasks, resources, energy, caws_df)
+    def __init__(self, tasks, static_power, energy_consumed, alpha=0.9):
+        self.tasks = tasks
+        self.static_power = static_power
+        self.energy_consumed = energy_consumed
+        self.alpha = alpha
+
+        self.regressions = {}
 
     def train(self, tasks, resources, energy, caws_df):
+        resources = resources.dropna(subset=["perf_unhalted_core_cycles", "perf_unhalted_reference_cycles", "perf_llc_misses", "perf_instructions_retired"])
+
         energy["timestamp"] = pd.to_datetime(energy['timestamp'])
         energy["power"] = energy["total_energy"] / energy["duration"]
         energy = energy.sort_values("timestamp", ignore_index=True)
         energy["block_id"] = energy[["run_id", "block_id"]].apply(lambda r: f"{r.run_id}.{r.block_id}", axis=1)
+        self.energy_consumed += energy["total_energy"].sum()
 
         resources["timestamp"] = pd.to_datetime(resources['timestamp'])
         resources = resources.sort_values("timestamp", ignore_index=True)
@@ -57,13 +76,19 @@ class EndpointModel:
             df = df_split_clean[block_id][0]
             for i in range(1, len(df_split_clean[block_id])):
                 df = sum_resources(df, df_split_clean[block_id][i])
-            
+
             # TODO: Should I combine blocks/runs to create regression?
             df_combined = pd.merge_asof(energy[energy["block_id"] == block_id], df, on="timestamp", direction="backward")
+            df_combined.replace([np.inf, -np.inf], np.nan, inplace=True)
             df_combined = df_combined.dropna()
             regr = ElasticNet(random_state=0, positive=True)
             regr.fit(df_combined[["perf_instructions_retired", "perf_llc_misses"]].values, df_combined["power"])
             df_combined["pred_power"] = regr.predict(df_combined[["perf_instructions_retired", "perf_llc_misses"]].values)
+
+            if self.static_power is None:
+                self.static_power = regr.intercept_
+            else:
+                self.static_power = (self.alpha * self.static_power) + ((1-self.alpha) * regr.intercept_)
 
             for i in range(len(df_split_clean[block_id])):
                 worker_df = df_split_clean[block_id][i]
@@ -90,119 +115,228 @@ class EndpointModel:
 
         tasks["task_try_time_running"] = pd.to_datetime(tasks['task_try_time_running'])
         tasks["task_try_time_running_ended"] = pd.to_datetime(tasks['task_try_time_running_ended'])
-        tasks["running_duration"] = tasks["task_try_time_running_ended"] - tasks["task_try_time_running"]
+        tasks["running_duration"] = (tasks["task_try_time_running_ended"] - tasks["task_try_time_running"]) / np.timedelta64(1, 's')
 
         def calc_energy(row):
             try:
                 return process_preds[(row.block_id, row.pid)].loc[row.task_try_time_running_ended, "energy"]- process_preds[(row.block_id, row.pid)].loc[row.task_try_time_running, "energy"]
             except:
                 return None
-        tasks["energy"]  = tasks.apply(calc_energy, axis=1)
+        tasks["energy_consumed"]  = tasks.apply(calc_energy, axis=1)
 
-        tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy"]]
-        self.tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
+        tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
+        caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began"]]
 
-    def update(self, tasks, resources, energy, caws_df):
-        resources["timestamp"] = pd.to_datetime(resources['timestamp'])
-        resources = resources.sort_values("timestamp", ignore_index=True)
-        resources = resources.filter(regex='psutil_process_*', axis=1)
-        resources["process_id"] = resources[["run_id", "block_id", "pid"]].apply('_'.join, axis=1)
-        resources = resources.drop(["run_id", "block_id", "pid"], axis=1)
-        
-        df_split = split(resources)
-        df_split_clean = []
-        for i in range(len(df_split)):
-            df_new = df_split[i].diff()
-            df_new["timestamp"] = (df_new["timestamp"] / np.timedelta64(1, "s"))
-            df_new = df_new.div(df_new["timestamp"], axis='index')
-            df_new["cpu_freq_rel"] = (df_new["perf_unhalted_core_cycles"] + .000001) / (df_new["perf_unhalted_reference_cycles"] + .000001) 
-            df_new["process_id"] = df_split[i]["process_id"]
-            df_new["timestamp"] = df_split[i]["timestamp"]
-            df_new = df_new.set_index("timestamp")
-            df_split_clean.append(df_new)
+        tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
+        self.tasks = pd.concat([self.tasks, tasks])
+        self.regressions = {}
+        return tasks, self.static_power, self.energy_consumed
 
-        process_preds = {}
-        for pid in process_preds:
-            process_preds[pid] = pd.merge_ordered(
-                process_preds[pid], trys.loc[trys["pid"] == pid, "timestamp"].rename(columns={"task_try_time_running": "timestamp"}),
-                on="timestamp"
-            )
-            process_preds[pid] = pd.merge_ordered(
-                process_preds[pid], trys.loc[trys["pid"] == pid, "timestamp"].rename(columns={"task_try_time_running_ended": "timestamp"}),
-                on="timestamp"
-            )
-            process_preds[pid] = process_preds[pid].set_index("timestamp")
-            process_preds[pid]["pred_power"] = process_preds[pid]["pred_power"].interpolate(method="time")
-            process_preds[pid] = process_preds[pid].dropna(subset=["pred_power"])
-            process_preds[pid]["energy"] = integrate.cumtrapz(process_preds[pid]["pred_power"], x=process_preds[pid].index.astype(np.int64) / 10**9, initial=0)
-            process_preds[pid] = process_preds[pid][["timestamp", "energy"]]
+    def predict_func(self, func_name, features):
+        if func_name not in self.regressions:
+            func_tasks = self.tasks[self.tasks["func_name"] == func_name]
+            func_tasks = func_tasks.dropna(subset=["running_duration", "energy_consumed"])
+            if len(func_tasks) == 0:
+                return Prediction(None, None)
 
-        tasks["task_try_time_running"] = pd.to_datetime(tasks['task_try_time_running'])
-        tasks["task_try_time_running_ended"] = pd.to_datetime(tasks['task_try_time_running_ended'])
-        tasks["running_duration"] = tasks["task_try_time_running_ended"] - tasks["task_try_time_running"]
-        tasks = tasks.set_index("task_id")
+            # func_tasks["value"] = func_tasks['value'].fillna(1)
+            func_tasks = func_tasks.sort_values("feature_id")
+            func_tasks = func_tasks.groupby("caws_task_id").agg(
+                {'running_duration': 'first', 'energy_consumed': 'first', 'value': list})
 
-        def calc_energy(row):
-            try:
-                return process_preds[row.pid].loc[row.task_try_time_running_ended, "energy"]- process_preds[row.pid].loc[row.task_try_time_running, "energy"]
-            except:
-                return None
-        tasks["energy"]  = tasks.apply(calc_energy, axis=1)
-        tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy"]]
-        self.tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
+            data_matrix = np.stack(func_tasks["value"].values)
+            (n, f) = data_matrix.shape
+            data_matrix = np.c_[data_matrix, np.ones(n)]
+            data_matrix = data_matrix[:, ~pd.isnull(data_matrix).any(axis=0)]
+            y_matrix = func_tasks[["running_duration", "energy_consumed"]].to_numpy()
+            w, _, _, _ = np.linalg.lstsq(data_matrix.astype(np.float64),  y_matrix, rcond=None)
 
-    def predict_func(self, func_name, include_ci=False, confidence_level=0.9):
-        func_tasks = self.tasks[self.tasks["func_name"] == func_name]
-        runtime_mean = func_tasks["running_duration"].mean() / np.timedelta64(1, 's')
-        runtime_std = func_tasks["running_duration"].std() / np.timedelta64(1, 's')
-        energy_mean = func_tasks["energy"].mean() 
-        energy_std = func_tasks["energy"].std()
+            self.regressions[func_name] = w
+        else:
+            w = self.regressions[func_name]
 
-        if include_ci:
-            runtime_mean_ci = bootstrap((func_tasks["running_duration"], ), np.mean, confidence_level=confidence_level).confidence_interval
-            runtime_std = bootstrap((func_tasks["running_duration"], ), np.std, confidence_level=confidence_level).confidence_interval
-            energy_mean_ci = bootstrap((func_tasks["energy"], ), np.mean, confidence_level=confidence_level).confidence_interval
-            energy_std_ci = bootstrap((func_tasks["energy"], ), np.std, confidence_level=confidence_level).confidence_interval
-
-            return (
-                {
-                    "runtime": (runtime_mean, runtime_std), 
-                    "energy": (energy_mean, energy_std)
-                }, 
-                {
-                    "runtime": (runtime_mean_ci, runtime_std), 
-                    "energy": (energy_mean, energy_std)}
-                )
-            
-        return Prediction(runtime_mean, energy_mean)
+        features.append(1)
+        y = np.array(features) @ w
+        return Prediction(y[0], y[1])
 
     def predict_cold_start(self):
         cold_start_tasks = self.tasks[self.tasks["endpoint_status"] == "COLD"]
+        if len(cold_start_tasks) == 0: # No information, or endpoint is always warm
+            return 0
         return (cold_start_tasks["task_try_time_running"] - cold_start_tasks["time_began"]).mean()
 
     def predict_static_power(self):
-        return self.energy_regr.intercept_
+        return self.static_power
 
 
 class Predictor:
     def __init__(self, endpoints, caws_database_url):
-        self.caws_db = sqlalchemy.create_engine(caws_database_url) #TODO: Better method for this?
-        with self.caws_db.begin() as connection:
-            query = text("""SELECT func_name, funcx_task_id, endpoint_id, time_began, endpoint_status FROM caws_task WHERE (task_status='COMPLETED') AND (endpoint_id in :endpoint_ids)""")
-            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in endpoints], expanding=True))
-            func_to_tasks = pd.read_sql(query, connection).dropna()
+        self.last_update_time = {}
+        self.transfer_runtime_models = {} # Build transfer models on demand
+        self.caws_database_url = caws_database_url
+        self.endpoints = endpoints
 
-        self.endpoints = {}
-        for endpoint in endpoints:
-            tasks, resources, energy = endpoint.collect_monitoring_info()
-            caws_df = func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
-            self.endpoints[endpoint.name] = EndpointModel(tasks, resources, energy, caws_df)
+        self.transfer_energy_models = {}
+        directory = os.path.dirname(os.path.realpath(__file__))
+        transfer_config_file = os.path.join(directory, "transfer_config.json")
+        with open(transfer_config_file) as fp:
+            transfer_energy_info = json.load(fp)
 
-    def predict(self, endpoint, task):
-        return self.endpoints[endpoint.name].predict_func(task.function_name)
+        n_switches = transfer_energy_info["defaults"]["num_switches"]
+        edge_routers = transfer_energy_info["defaults"]["edge_routers"]
+        hardware_models = transfer_energy_info["hardware_models"]
+        for model in transfer_energy_info["transfer_models"]:
+            key = (model["src"], model["dest"])
+            core_routers = model["num_hops"] - edge_routers
+            energy_per_bit = (n_switches * hardware_models["switch"])\
+                             + (edge_routers * hardware_models["edge_router"])\
+                             + (core_routers * hardware_models["core_router"])
+            self.transfer_energy_models[key] = energy_per_bit
         
-    def static_power(self, endpoint):
-        return self.endpoints[endpoint.name].predict_static_power()
+        self.embedding_matrix = None
+            
 
-    def cold_start(self, endpoint):
-        return self.endpoints[endpoint.name].predict_cold_start()
+    def start(self):
+        self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
+        self.Session = sessionmaker(bind=self.eng)
+        with self.Session() as session:
+            connection = session.connection()
+            query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
+                """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                """AND (endpoint_id in :endpoint_ids))""")
+            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
+            func_to_tasks = pd.read_sql(query, connection)
+            func_to_tasks = func_to_tasks.dropna(subset=["running_duration", "energy_consumed"])
+
+            query = text("""SELECT * FROM caws_endpoint WHERE endpoint_id in :endpoint_ids""")
+            query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
+            endpoint_df = pd.read_sql(query, connection)
+            endpoint_df = endpoint_df.set_index("endpoint_id")
+
+            query = text("""SELECT * FROM transfer LIMIT 1000""")
+            self.transfers = pd.read_sql(query, connection)
+            self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
+
+        self.endpoint_models = {}
+        for endpoint in self.endpoints:
+            tasks =  func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
+            static_power = endpoint_df.loc[endpoint.compute_endpoint_id]["static_power"]
+            energy_consumed = endpoint_df.loc[endpoint.compute_endpoint_id]["energy_consumed"]
+            self.endpoint_models[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
+    
+    def create_embedding_table(self, func_to_tasks, n_examples=10):
+        func_to_tasks = func_to_tasks.sort_values("feature_id")
+        func_to_tasks = func_to_tasks.groupby("caws_task_id").agg(
+            {'func_name': 'first', 'running_duration': 'first', 'energy_consumed': 'first', 'value': list})
+        func_to_tasks["count"] = 1
+        func_to_tasks = func_to_tasks.groupby("func_name").agg(
+            {'value': 'first', "count": "count"}).sort_values("count", ascending=False)
+        func_to_tasks = func_to_tasks.iloc[:n_examples].reset_index()
+        
+        embedding_matrix = np.zeros((2, len(self.endpoints), func_to_tasks.shape[0]))
+        for i, endpoint_model in enumerate(self.endpoint_models.values()):
+            result_df = func_to_tasks.apply(lambda r: list(endpoint_model.predict_func(r.func_name, [f for f in r.value if f is not None])), axis=1, result_type="expand")
+            embedding_matrix[0, i, :] = result_df.iloc[:, 0].to_numpy()
+            embedding_matrix[1, i, :] = result_df.iloc[:, 1].to_numpy()
+
+        return embedding_matrix
+
+    def update(self):
+        for endpoint in self.endpoints:
+            prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
+            tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
+            with self.Session() as session:
+                connection = session.connection()
+                query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                    """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
+                    """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                    """AND (endpoint_id = :endpoint_id)  AND (time_completed > :start_time)) """)
+                query = query.bindparams(endpoint_id=endpoint.compute_endpoint_id, start_time=prev_query)
+                caws_task = pd.read_sql(query, connection)
+
+            tasks, static_power, energy_consumed = self.endpoint_models[endpoint.name].train(tasks, resources, energy, caws_task)
+            tasks = tasks.dropna(subset=["caws_task_id"]) #TODO: Fix clock synchronization
+            
+            with self.Session() as session:
+                values = tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_dict('records')
+                session.execute(update(CawsDatabase.CawsTask), values)
+                session.commit()
+                session.execute(update(CawsDatabase.CawsEndpoint), [{"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed}])
+                session.commit()
+
+            self.last_update_time[endpoint.name] = datetime.now()
+
+        with self.Session() as session:
+            connection = session.connection()
+            query = text("""SELECT * FROM transfer LIMIT 1000""")
+            self.transfers = pd.read_sql(query, connection)
+            self.transfers["runtime"] = (pd.to_datetime(self.transfers["time_completed"]) - pd.to_datetime(self.transfers["time_submit"])) / np.timedelta64(1, "s")
+            # I don't delete the transfer models here
+
+    def predict_execution(self, endpoint, task):
+        # TODO: Figure out how to implement impute for missing values
+        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, task.features)
+        if pred.runtime is None or pred.energy is None:
+            if self.embedding_matrix is None:
+                with self.Session() as session:
+                    connection = session.connection()
+                    query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                        """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
+                        """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
+                        """AND (endpoint_id in :endpoint_ids))""")
+                    query = query.bindparams(bindparam("endpoint_ids", [e.compute_endpoint_id for e in self.endpoints], expanding=True))
+                    func_to_tasks = pd.read_sql(query, connection)
+                    func_to_tasks = func_to_tasks.dropna(subset=["running_duration", "energy_consumed"])
+
+                if len(func_to_tasks) == 0:
+                    return None
+
+                self.embedding_matrix = self.create_embedding_table(func_to_tasks)
+
+            new_features = np.zeros((2, len(self.endpoints), 1))
+            for i, model in enumerate(self.endpoint_models.values()):
+                result = model.predict_func(task.function_name, task.features)
+                new_features[0, i, 0] = result[0]
+                new_features[1, i, 0] = result[1]
+
+            self.embedding_matrix = np.concatenate((self.embedding_matrix, new_features), axis=2)
+
+            runtime_filled = NuclearNormMinimization().fit_transform(self.embedding_matrix[0])
+            energy_filled = NuclearNormMinimization().fit_transform(self.embedding_matrix[1])
+
+            for i, other in enumerate(self.endpoints):
+                if endpoint.name == other.name:
+                    break
+            result = Prediction(runtime_filled[i, -1], energy_filled[i, -1])
+
+            # Trim embedding matrix again
+            self.embedding_matrix = np.unique(self.embedding_matrix, axis=2)
+
+            return result
+
+        return pred
+
+    def predict_transfer(self, src_endpoint, dst_endpoint, size, files):
+        if (src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id) not in self.transfer_runtime_models:
+            transfers = self.transfers[
+                (self.transfers["src_endpoint_id"] == src_endpoint.transfer_endpoint_id) \
+                &  (self.transfers["dest_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
+            X = transfers[["bytes_transferred", "files_transferred"]].to_numpy()
+            X = np.c_[X, np.ones(X.shape[0])]
+            y = transfers["runtime"].to_numpy()
+            w, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+            self.transfer_runtime_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
+
+        else:
+            w = self.transfer_runtime_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)]
+
+        pred_runtime = np.array([size, files, 1]) @ w
+        pred_energy = self.transfer_energy_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] * size
+        return Prediction(pred_runtime, pred_energy)        
+        
+    def predict_static_power(self, endpoint):
+        return self.endpoint_models[endpoint.name].predict_static_power()
+
+    def predict_cold_start(self, endpoint):
+        return self.endpoint_models[endpoint.name].predict_cold_start()

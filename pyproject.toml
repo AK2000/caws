@@ -18,7 +18,9 @@ dependencies = [
     "globus-compute-sdk @ git+https://github.com/AK2000/funcX@power_monitoring_new#subdirectory=compute_sdk",
     "sqlalchemy",
     "geoip2",
-    "click"
+    "click",
+    "scikit-learn"
+    "fancyimpute @ git+https://github.com/iskandr/fancyimpute.git"
 ]
 dynamic = ["version"]
 

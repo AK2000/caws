@@ -38,6 +38,14 @@ class CawsDatabase:
 
         self.Session = sessionmaker(bind=self.eng)
 
+        global insert
+        if self.eng.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert
+        elif self.eng.dialect.name == 'sqlite':
+            from sqlalchemy.dialects.sqlite import insert
+        else:
+            raise NotImplementedError(f"Unsuported dialect for CAWS databse {self.eng.dialect.name}")
+
     def _get_mapper(self, table_obj: Table) -> Mapper:
         all_mappers: Set[Mapper] = set()
         for mapper_registry in mapperlib._all_registries():  # type: ignore
@@ -75,6 +83,15 @@ class CawsDatabase:
             session.bulk_insert_mappings(mapper, mappings)
             session.commit()
 
+    def insert_or_nothing(self, *, table: str, index_elements: List[str], messages: List[dict[str, Any]]) -> None:
+        table_obj = self.meta.tables[table]
+        insert_mappings = self._generate_mappings(table_obj, messages=messages)
+        stmt = insert(table_obj).values(insert_mappings)
+        stmt = stmt.on_conflict_do_nothing(index_elements=index_elements)
+        with self.Session() as session:
+            session.execute(stmt)
+            session.commit()
+
     def _generate_mappings(self, table: Table, columns: Optional[List[str]] = None, messages: List[Dict[str, Any]] = []) -> List[Dict[str, Any]]:
         mappings = []
         for msg in messages:
@@ -99,6 +116,16 @@ class CawsDatabase:
         time_scheduled = Column(DateTime, nullable=True)
         time_began = Column(DateTime, nullable=True)
         time_completed = Column(DateTime, nullable=True)
+        running_duration = Column(Float, nullable=True)
+        energy_consumed = Column(Float, nullable=True)
+
+    class CawsEndpoint(Base):
+        __tablename__ = "caws_endpoint"
+        endpoint_id = Column(Text, nullable=False, primary_key=True)
+        transfer_endpoint_id = Column(Text, nullable=True)
+        tasks_run = Column(Integer, nullable=True)
+        static_power = Column(BigInteger, nullable=True)
+        energy_consumed = Column(BigInteger, nullable=True)
 
     class Transfer(Base):
         __tablename__ = "transfer"
@@ -109,10 +136,12 @@ class CawsDatabase:
         time_submit = Column(DateTime, nullable=False)
         time_completed = Column(DateTime, nullable=True)
         bytes_transferred = Column(BigInteger, nullable=True)
+        files_transferred = Column(Integer, nullable=True)
+        sync_level = Column(Integer, nullable=True)
 
     class TaskFeatures(Base):
         __tablename__ = "features"
-        caws_task_id = Column(Text, nullable=False)
+        caws_task_id = Column(Text, sa.ForeignKey('caws_task.caws_task_id'), nullable=False)
         feature_id = Column(Integer, nullable=False)
         feature_type = Column(Text, nullable=False)
         value = Column(Text, nullable=False)
@@ -158,6 +187,9 @@ class CawsDatabaseManager(metaclass=Singleton):
             self._pusher_thread.join()
             self.started = False
 
+    def update_endpoints(self, msgs):
+        self.db.insert_or_nothing(table="caws_endpoint", index_elements=["endpoint_id"], messages=msgs)
+
     def send_task_message(self, task: CawsTaskInfo):
         msg = dict()
         msg["caws_task_id"] = task.task_id
@@ -173,7 +205,6 @@ class CawsDatabaseManager(metaclass=Singleton):
         msg["time_scheduled"] = task.timing_info.get("scheduled")
         msg["time_began"] = task.timing_info.get("began")
         msg["time_completed"] = task.timing_info.get("completed")
-
         self.task_msg_queue.put(msg)
 
     def send_transfer_message(self, transfer_info: dict[Any]):
@@ -199,7 +230,7 @@ class CawsDatabaseManager(metaclass=Singleton):
     def _database_pushing_loop(self):
         task_update_cols = ["funcx_task_id", "endpoint_id", "transfer_endpoint_id", "endpoint_status", "task_status",
                        "time_scheduled", "time_began", "time_completed", "caws_task_id"]
-        transfer_update_cols = ["transfer_id", "transfer_status", "time_completed", "bytes_transferred"]
+        transfer_update_cols = ["transfer_id", "transfer_status", "time_completed", "bytes_transferred", "files_transferred", "sync_level"]
 
         while not self._kill_event.is_set():
             task_messages = self._get_messages_in_batch(self.task_msg_queue)

@@ -36,7 +36,7 @@ class CawsExecutor(object):
     endpoints: list[Endpoint]
     strategy: Strategy
     _task_watchdog_sleep: float = 0.2
-    _endpoint_watchdog_sleep: float = 5
+    _endpoint_watchdog_sleep: float = 1
     _task_scheduling_sleep: float = 0.5
 
     scheduling_lock = Lock() # Use to manually batch tasks
@@ -46,12 +46,14 @@ class CawsExecutor(object):
     def __init__(self, 
                  endpoints: list[Endpoint],
                  strategy: Strategy,
+                 predictor = None,
                  caws_database_url: str | None = None,
                  task_watchdog_sleep: float = 0.2,
-                 endpoint_watchdog_sleep: float = 2):
+                 endpoint_watchdog_sleep: float = 1):
         
         self.endpoints = endpoints
         self.strategy = strategy
+        self.predictor = predictor
         self._task_watchdog_sleep = task_watchdog_sleep
         self._endpoint_watchdog_sleep = endpoint_watchdog_sleep
 
@@ -71,6 +73,20 @@ class CawsExecutor(object):
 
     def start(self):
         print("Executor starting")
+        msgs = []
+        for endpoint in self.endpoints:
+            msg = {
+                "endpoint_id": endpoint.compute_endpoint_id,
+                "transfer_endpoint_id": endpoint.transfer_endpoint_id,
+                "tasks_run": 0,
+                "energy_consumed": 0,
+            }
+            msgs.append(msg)
+        self.caws_db.update_endpoints(msgs)
+
+        if self.predictor:
+            self.predictor.start()
+        
         self.caws_db.start()
         self._transfer_manager.start()
 
@@ -84,10 +100,16 @@ class CawsExecutor(object):
     def shutdown(self):
         print("Executor shutting down")
         self._kill_event.set()
-        self._task_scheduler.join()
-        self._endpoint_watchdog.join()
         self._transfer_manager.shutdown()
         self.caws_db.shutdown()
+
+        if self.predictor:
+            time.sleep(2)
+            self.predictor.update()
+
+        self._task_scheduler.join()
+        self._endpoint_watchdog.join()
+        
 
     def submit(self, fn: Callable, *args, deadline=None, resources=None, **kwargs):
         if isinstance(fn, CawsTask):
@@ -191,7 +213,7 @@ class CawsExecutor(object):
         # Must be done last to avoid race condition
         task.gc_future.add_done_callback(lambda fut : self._task_complete_callback(task, fut))
 
-    def _transfer_error(task, endpoint):
+    def _transfer_error(self, task, endpoint):
         task.task_status = TaskStatus.ERROR
         task.timing_info["completed"] = datetime.now()
         self.caws_db.send_task_message(task)
@@ -223,7 +245,7 @@ class CawsExecutor(object):
                     self._send_backup_tasks()
 
             # Sleep before checking statuses again
-            time.sleep(5)
+            time.sleep(self._endpoint_watchdog_sleep)
 
     def _send_backup_tasks(self):
         pass

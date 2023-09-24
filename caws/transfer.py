@@ -45,7 +45,7 @@ class TransferRecord:
     error: None | str = None
 
 class TransferManager(object):
-    def __init__(self, caws_db: Optional[CawsDatabaseManager] = None, sync_level='mtime', log_level=logging.INFO):
+    def __init__(self, caws_db: Optional[CawsDatabaseManager] = None, sync_level=None, log_level=logging.INFO):
         # Authorize with globus
         self.transfer_client = self.get_transfer_client()
         self.sync_level = sync_level
@@ -178,6 +178,9 @@ class TransferManager(object):
             for src_path in files:
                 size += src_path.size
                 tdata.add_item(src_path.get_src_endpoint_path(), src_path.get_dest_endpoint_path(dst, task_id))
+                if not src_path.isolate:
+                    tdata.sync_level = "exists"
+                    
             task_record.remaining += 1
 
         if task_record.remaining == 0:
@@ -203,10 +206,11 @@ class TransferManager(object):
                     self.transfer_client = self.login_and_get_transfer_client(scopes=self.scopes)
                     res = self.transfer_client.submit_transfer(tdata)
                 else:
+                    print(err)
                     for task_record in task_records:
                         task_record.status = TransferStatus.PENDING
-                        if task_record.failed_callback is not None:
-                            task_record.failed_callback()
+                        if task_record.fail_callback is not None:
+                            task_record.fail_callback()
                         task_record.status = TransferStatus.FAILED
                     continue
                     
@@ -309,6 +313,9 @@ class TransferManager(object):
                 elif status['status'] == 'SUCCEEDED':
                     info["transfer_status"] = "SUCCEEDED"
                     info["bytes_transferred"] = status["bytes_transferred"]
+                    info["sync_level"] = status["sync_level"]
+                    info["files_transferred"] = status["files_transferred"]
+                    
                     logger.info('Globus transfer {} finished in time {}'
                                 .format(name, info['time_completed'] - info['time_submit']))
 

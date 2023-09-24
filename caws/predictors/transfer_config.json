@@ -1,0 +1,53 @@
+{
+    "defaults": {
+        "num_switches": 6,
+        "edge_routers": 2
+    },
+    "hardware_models": {
+        "switch": 0.020,
+        "edge_router": 0.0081,
+        "core_router": 0.0027
+    },
+    "transfer_models": [
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "9032dd3a-e841-4687-a163-2720da731b5b",
+            "num_hops": 19
+        },
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "2fde89c0-6fb4-11eb-8c47-0eb1aa8d4337",
+            "num_hops": 17
+        },
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "num_hops": 17
+        },
+        {
+            "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "dest": "5bf3e9c5-c6d0-45d8-b63a-9e33a1891319",
+            "num_hops": 33
+        },
+        {
+            "src": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "dest": "9032dd3a-e841-4687-a163-2720da731b5b",
+            "num_hops": 14
+        },
+        {
+            "src": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "dest": "2fde89c0-6fb4-11eb-8c47-0eb1aa8d4337",
+            "num_hops": 10
+        },
+        {
+            "src": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "dest": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "num_hops": 17
+        },
+        {
+            "src": "12906d72-48e0-11ee-8135-15041d20ea55",
+            "dest": "5bf3e9c5-c6d0-45d8-b63a-9e33a1891319",
+            "num_hops": 32
+        }
+    ]
+}
