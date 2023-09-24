@@ -61,7 +61,8 @@ class Endpoint:
                  min_blocks=0,
                  max_blocks=1,
                  parallelism=0.5,
-                 shutdown_time=10):
+                 shutdown_time=10,
+                 tz_offset=0):
                  
         self.name = name
         
@@ -132,6 +133,7 @@ class Endpoint:
             self.state = EndpointState.COLD
         
         self.start_time = datetime.datetime.now()
+        self.time_offset = tz_offset
 
     def collect_monitoring_info(self, prev_timestamp = None):
         if not self.monitoring_avail:
@@ -139,6 +141,8 @@ class Endpoint:
 
         if prev_timestamp == None:
             prev_timestamp = self.start_time
+
+        prev_timestamp += datetime.timedelta(hours=self.time_offset)
 
         with self.monitoring_engine.begin() as conn:
             run_ids = list(conn.execute(select(mdb.Workflow.run_id).where(
@@ -156,8 +160,8 @@ class Endpoint:
             end_times = pd.read_sql(select(mdb.Status).where(and_(mdb.Status.task_status_name == "running_ended", mdb.Status.timestamp > prev_timestamp)), conn)
             task_df = pd.merge(task_df, end_times[["task_id", "timestamp"]], on="task_id")
             task_df = task_df.rename(columns={"timestamp": "task_try_time_running_ended"})
-            task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"])
-            task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"])
+            task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"]) - pd.Timedelta(self.time_offset, "h")
+            task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"]) - pd.Timedelta(self.time_offset, "h")
 
             prev_timestamp = prev_timestamp - datetime.timedelta(seconds=1)
             resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
@@ -165,9 +169,11 @@ class Endpoint:
                 and_(
                     or_(*resource_run_ids_or),
                     mdb.Resource.timestamp > prev_timestamp)), conn)
+            resources_df["timestamp"] = pd.to_datetime(resources_df["timestamp"]) - pd.Timedelta(self.time_offset, "h")
 
             energy_run_ids_or = [mdb.Energy.run_id == run_id[0] for run_id in run_ids]
             energy_df = pd.read_sql(select(mdb.Energy).where(and_(or_(*energy_run_ids_or), mdb.Energy.timestamp > prev_timestamp)), conn)
+            energy_df["timestamp"] = pd.to_datetime(energy_df["timestamp"]) - pd.Timedelta(self.time_offset, "h")
 
         return task_df, resources_df, energy_df
 
