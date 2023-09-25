@@ -112,13 +112,13 @@ class MHRA(Strategy):
                     + (((1 - self.alpha) * runtime)/self.runtime_normalization)
 
     def preprocess(self, tasks):
-        mock_endpoint = MockEndpoint(self.endpoints[0], self.predictor.static_power(self.endpoints[0]))
+        mock_endpoint = MockEndpoint(self.endpoints[0], self.predictor.predict_static_power(self.endpoints[0]))
         print("Preprocessing Tasks")
 
         task_runtimes = []
         task_energies = []
         for task in tasks:
-            task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
+            task_runtime, task_energy = self.predictor.predict_execution(mock_endpoint.endpoint, task)
             mock_endpoint.schedule(task_runtime, task_energy)
 
             task_runtimes.append(task_runtime)
@@ -133,7 +133,7 @@ class MHRA(Strategy):
 
         # TODO: Implement other heuristics
         tasks_by_runtime = zip(task_runtimes, tasks)
-        tasks_by_energy = zip(task_eneries, tasks)
+        tasks_by_energy = zip(task_energies, tasks)
         return list(tasks_by_runtime), list(tasks_by_energy)
 
     def schedule(self, tasks):
@@ -142,13 +142,13 @@ class MHRA(Strategy):
         for heuristic in self.heuristics:
             tasks = heuristic(tasks_by_runtime, tasks_by_energy)            
             
-            mock_endpoints = [MockEndpoint(e, self.predictor.static_power(e)) for e in self.endpoints]
+            mock_endpoints = [MockEndpoint(e, self.predictor.predict_static_power(e)) for e in self.endpoints]
             cur_schedule = Schedule()
             cur_cost = 0
 
             for task in tasks:
                 mock_endpoint = mock_endpoints[0]
-                task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
+                task_runtime, task_energy = self.predictor.predict_execution(mock_endpoint.endpoint, task)
                 endpoint_runtime, endpoint_energy = mock_endpoint.predict(task_runtime, task_energy)
                 makespan_runtime = max(*[e.runtime for e in mock_endpoints[1:]], endpoint_runtime)
                 makespan_energy = sum([e.energy() for e in mock_endpoints[1:]]+[endpoint_energy])
@@ -160,7 +160,7 @@ class MHRA(Strategy):
                 best_task_energy = task_energy
 
                 for i, mock_endpoint in enumerate(mock_endpoints[1:], start=1):
-                    task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
+                    task_runtime, task_energy = self.predictor.predict_execution(mock_endpoint.endpoint, task)
                     endpoint_runtime, endpoint_energy = mock_endpoint.predict(task_runtime, task_energy)
                     makespan_runtime = max(*[e.runtime for e in mock_endpoints[:i]],
                                         *[e.runtime for e in mock_endpoints[i+1:]],
@@ -180,6 +180,10 @@ class MHRA(Strategy):
                 cur_schedule = new_schedule
                 cur_cost = new_cost
                 best_endpoint.schedule(best_task_runtime, best_task_energy)
+
+            print(f"With heuristic {heuristic.__name__}, tasks would take: ")
+            print(f"\t{max([e.runtime for e in mock_endpoints])} s")
+            print(f"\t{sum([e.energy() for e in mock_endpoints])} J")
 
             if cur_cost < best_cost:
                 best_schedule = cur_schedule

@@ -239,5 +239,6 @@ class Endpoint:
         elif len(status["details"]["active_managers"]) == 0 and self.state != EndpointState.WARMING:
             self.state = EndpointState.COLD
 
+        self.active_slots = len(status["details"]["active_managers"]) * self.slots_per_block
         return self.state
 
