@@ -317,22 +317,22 @@ class Predictor:
 
         return pred
 
-    def predict_transfer(self, src_endpoint, dst_endpoint, size, files):
-        if (src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id) not in self.transfer_runtime_models:
+    def predict_transfer(self, src_endpoint_id, dst_endpoint_id, size, files):
+        if (src_endpoint_id, dst_endpoint_id) not in self.transfer_runtime_models:
             transfers = self.transfers[
-                (self.transfers["src_endpoint_id"] == src_endpoint.transfer_endpoint_id) \
-                &  (self.transfers["dest_endpoint_id"] == dst_endpoint.transfer_endpoint_id)]
+                (self.transfers["src_endpoint_id"] == src_endpoint_id) \
+                &  (self.transfers["dest_endpoint_id"] == dst_endpoint_id)]
             X = transfers[["bytes_transferred", "files_transferred"]].to_numpy()
             X = np.c_[X, np.ones(X.shape[0])]
             y = transfers["runtime"].to_numpy()
             w, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
-            self.transfer_runtime_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] = w
+            self.transfer_runtime_models[(src_endpoint_id, dst_endpoint_id)] = w
 
         else:
-            w = self.transfer_runtime_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)]
+            w = self.transfer_runtime_models[(src_endpoint_id, dst_endpoint_id)]
 
         pred_runtime = np.array([size, files, 1]) @ w
-        pred_energy = self.transfer_energy_models[(src_endpoint.transfer_endpoint_id, dst_endpoint.transfer_endpoint_id)] * size
+        pred_energy = self.transfer_energy_models[(src_endpoint_id, dst_endpoint_id)] * size
         return Prediction(pred_runtime, pred_energy)        
         
     def predict_static_power(self, endpoint):

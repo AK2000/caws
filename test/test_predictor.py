@@ -138,7 +138,7 @@ def test_predictor_transfer():
     dbm.shutdown()
 
     predictor.update()
-    result = predictor.predict_transfer(source, destination, caws_path.size, 1)
+    result = predictor.predict_transfer(source.transfer_endpoint_id, destination.transfer_endpoint_id, caws_path.size, 1)
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
 

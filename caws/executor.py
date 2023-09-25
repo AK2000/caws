@@ -132,6 +132,16 @@ class CawsExecutor(object):
                     "feature_type": feature_type.name,
                     "value": str(value)
             })
+
+        for i, arg in enumerate(task.task_args):
+            if isinstance(arg, CawsPath):
+                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.size
+                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.num_files
+
+        for key, arg in task.task_kwargs.items():
+            if isinstance(arg, CawsPath):
+                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.size
+                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.num_files
         
         with self.ready_tasks_lock:
             self.ready_tasks.append(task_info)

@@ -15,8 +15,10 @@ class CawsPath:
         self.replicate_path = replicate_path
         self.isolate = isolate
         self.size = self._get_size(self.get_src_local_path())
+        self.num_files = self._get_num_files(self.get_src_local_path())
 
     def _get_size(self, path):
+        # TODO: Fix for remote paths
         if os.path.isfile(path):
             return os.path.getsize(path)
 
@@ -24,6 +26,16 @@ class CawsPath:
         for root, dirs, files in os.walk(path):
             size += sum(os.path.getsize(os.path.join(root, name)) for name in files)
         return size
+
+    def _get_num_files(self, path):
+        # TODO: Fix for remote paths
+        if os.path.isfile(path):
+            return 1
+
+        num_files = 0
+        for root, dirs, files in os.walk(path):
+            num_files += len(files)
+        return num_files
 
     def get_src_endpoint_path(self):
         return os.path.join(self.endpoint.endpoint_path, self.source_path)

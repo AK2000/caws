@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from enum import IntEnum
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Sequence, Optional, List, TYPE_CHECKING
+from typing import Any, Callable, Sequence, Optional, List, Dict, TYPE_CHECKING
 from concurrent.futures import Future
 from uuid import uuid4
 from datetime import datetime
+from collections import defaultdict
 
 from globus_compute_sdk import Client
 from globus_compute_sdk.sdk.asynchronous.compute_future import ComputeFuture
@@ -49,7 +50,9 @@ class CawsTaskInfo:
     endpoint: Endpoint | None = None
     endpoint_status: EndpointState | None = None
     deadline: datetime.Datetime | None = None
-    features: List[Any, CawsTaskFeature] = field(default_factory=list)
+    features: List[CawsTaskFeature] = field(default_factory=list)
+    transfer_size: Dict[str, int] = field(default_factory=lambda : defaultdict(int))
+    transfer_files: Dict[str, int] = field(default_factory=lambda : defaultdict(int))
 
 @dataclass
 class CawsTask:
