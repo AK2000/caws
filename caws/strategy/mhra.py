@@ -73,20 +73,33 @@ class MockEndpoint:
         energy += (self.active_blocks - self.min_blocks) * self.shutdown_time * self.static_power
         return energy
 
-def identity(tasks_by_runtime):
+def identity(tasks_by_runtime, tasks_by_energy):
     return [t[1] for t in tasks_by_runtime]
 
-def longest_processing_time(tasks_by_runtime):
+def longest_processing_time(tasks_by_runtime, tasks_by_energy):
     tasks_by_runtime = sorted(tasks_by_runtime, reverse=True)
     return [t[1] for t in tasks_by_runtime]
 
-def shortest_processing_time(tasks_by_runtime):
+def shortest_processing_time(tasks_by_runtime, tasks_by_energy):
     tasks_by_runtime = sorted(tasks_by_runtime)
     return [t[1] for t in tasks_by_runtime]
 
+def greatest_energy(tasks_by_runtime, tasks_by_energy):
+    tasks_by_energy = sorted(tasks_by_energy, reverse=True)
+    return [t[1] for t in tasks_by_energy]
+
+def least_energy(tasks_by_runtime, tasks_by_energy):
+    tasks_by_energy = sorted(tasks_by_energy)
+    return [t[1] for t in tasks_by_energy]
+
+
 class MHRA(Strategy):
 
-    def __init__(self, endpoints, predictor, alpha=1.0, heuristics=[identity, longest_processing_time, shortest_processing_time]):
+    def __init__(self, 
+                 endpoints,
+                 predictor,
+                 alpha=1.0,
+                 heuristics=[identity, longest_processing_time, shortest_processing_time, greatest_energy, least_energy]):
         self.cur_idx = 0
         self.endpoints = endpoints
         self.predictor = predictor
@@ -103,11 +116,13 @@ class MHRA(Strategy):
         print("Preprocessing Tasks")
 
         task_runtimes = []
+        task_energies = []
         for task in tasks:
             task_runtime, task_energy = self.predictor.predict(mock_endpoint.endpoint, task)
             mock_endpoint.schedule(task_runtime, task_energy)
 
             task_runtimes.append(task_runtime)
+            task_energies.append(task_energy)
         
         self.runtime_normalization = mock_endpoint.runtime
         self.energy_normalization = mock_endpoint.energy()
@@ -118,13 +133,14 @@ class MHRA(Strategy):
 
         # TODO: Implement other heuristics
         tasks_by_runtime = zip(task_runtimes, tasks)
-        return list(tasks_by_runtime)
+        tasks_by_energy = zip(task_eneries, tasks)
+        return list(tasks_by_runtime), list(tasks_by_energy)
 
     def schedule(self, tasks):
-        tasks_by_runtime = self.preprocess(tasks)
+        tasks_by_runtime, tasks_by_energy = self.preprocess(tasks)
         best_cost = float("inf")
         for heuristic in self.heuristics:
-            tasks = heuristic(tasks_by_runtime)            
+            tasks = heuristic(tasks_by_runtime, tasks_by_energy)            
             
             mock_endpoints = [MockEndpoint(e, self.predictor.static_power(e)) for e in self.endpoints]
             cur_schedule = Schedule()
