@@ -227,8 +227,7 @@ class TransferManager(object):
                     task_record.status = TransferStatus.FAILED
                 continue
 
-            
-            self.active_transfers[res['task_id']] = {
+            transfer_info= {
                 'name': f"{self._round} {i}/{n}",
                 'transfer_id': res["task_id"],
                 'src_endpoint_id': src_endpoint_id,
@@ -237,15 +236,14 @@ class TransferManager(object):
                 'time_submit': datetime.now(),
                 'task_records': task_records
             }
-            logger.debug(f"Submited Transfer to Globus, task id: {res['task_id']}")
+            if self.caws_db:
+                self.caws_db.send_transfer_message(transfer_info)
+            self.active_transfers[res['task_id']] = transfer_info
 
+            logger.debug(f"Submited Transfer to Globus, task id: {res['task_id']}")
             for task_record in task_records:
                 task_record.transfer_ids.append(res['task_id'])
-
-            all_task_records.extend(task_records)
-
-            if self.caws_db:
-                self.caws_db.send_transfer_message(self.active_transfers[res['task_id']])
+            all_task_records.extend(task_records)            
 
         for task_record in all_task_records:
             # Ensures extactly once semantics for callback

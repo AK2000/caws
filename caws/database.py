@@ -215,7 +215,7 @@ class CawsDatabaseManager(metaclass=Singleton):
         self.task_msg_queue.put(msg)
 
     def send_transfer_message(self, transfer_info: dict[Any]):
-        self.transfer_msg_queue.put(transfer_info)
+        self.transfer_msg_queue.put(transfer_info.copy())
 
     def send_feature_message(self, feature_info: dict[Any]):
         self.feature_msg_queue.put(feature_info)
