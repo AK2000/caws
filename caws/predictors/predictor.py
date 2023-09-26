@@ -246,6 +246,8 @@ class Predictor:
         for endpoint in self.endpoints:
             prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
             tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
+            self.last_update_time[endpoint.name] = tasks["task_try_time_returned"].max()
+            
             with self.Session() as session:
                 connection = session.connection()
                 query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
@@ -264,8 +266,6 @@ class Predictor:
                 session.commit()
                 session.execute(update(CawsDatabase.CawsEndpoint), [{"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed}])
                 session.commit()
-
-            self.last_update_time[endpoint.name] = datetime.now()
 
         with self.Session() as session:
             connection = session.connection()

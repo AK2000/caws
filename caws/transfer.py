@@ -22,7 +22,8 @@ from globus_sdk.tokenstorage import SimpleJSONFileAdapter
 from caws.database import CawsDatabaseManager
 
 logger = logging.getLogger(__name__)
-ch = logging.StreamHandler()
+os.makedirs("logs/", exist_ok=True) 
+ch = logging.FileHandler("logs/caws_transfer.log")
 ch.setFormatter(logging.Formatter(
     "[TRANSFER]  %(message)s", 'red'))
 logger.addHandler(ch)
@@ -162,7 +163,11 @@ class TransferManager(object):
                     dest_path = src_path.get_dest_local_path(dst, task_id)
                     dir_name = os.path.dirname(dest_path)
                     os.makedirs(dir_name, exist_ok=True)
-                    shutil.copy2(src_path.get_src_local_path(),  dest_path)
+                    if os.path.isfile(src_path.get_src_local_path()):
+                        shutil.copy2(src_path.get_src_local_path(),  dest_path)
+                    else:
+                        shutil.copytree(src_path.get_src_local_path(), dest_path)
+
                 continue
 
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')

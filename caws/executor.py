@@ -72,7 +72,7 @@ class CawsExecutor(object):
         return False
 
     def start(self):
-        print("Executor starting")
+        #print("Executor starting")
         msgs = []
         for endpoint in self.endpoints:
             msg = {
@@ -98,17 +98,16 @@ class CawsExecutor(object):
         self._endpoint_watchdog.start()
 
     def shutdown(self):
-        print("Executor shutting down")
+        #print("Executor shutting down")
         self._kill_event.set()
+        self._task_scheduler.join()
+        self._endpoint_watchdog.join()
         self._transfer_manager.shutdown()
         self.caws_db.shutdown()
 
         if self.predictor:
-            time.sleep(2)
+            time.sleep(5)
             self.predictor.update()
-
-        self._task_scheduler.join()
-        self._endpoint_watchdog.join()
         
 
     def submit(self, fn: Callable, *args, deadline=None, resources=None, **kwargs):
@@ -133,15 +132,15 @@ class CawsExecutor(object):
                     "value": str(value)
             })
 
-        for i, arg in enumerate(task.task_args):
+        for i, arg in enumerate(task_info.task_args):
             if isinstance(arg, CawsPath):
-                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.size
-                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.num_files
+                task_info.transfer_size[arg.endpoint.transfer_endpoint_id] += arg.size
+                task_info.transfer_files[arg.endpoint.transfer_endpoint_id] += arg.num_files
 
-        for key, arg in task.task_kwargs.items():
+        for key, arg in task_info.task_kwargs.items():
             if isinstance(arg, CawsPath):
-                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.size
-                task_info.transfer_features[arg.endpoint.transfer_endpoint_id] += arg.num_files
+                task_info.transfer_size[arg.endpoint.transfer_endpoint_id] += arg.size
+                task_info.transfer_files[arg.endpoint.transfer_endpoint_id] += arg.num_files
         
         with self.ready_tasks_lock:
             self.ready_tasks.append(task_info)
@@ -149,7 +148,7 @@ class CawsExecutor(object):
         return task_info.caws_future
 
     def _schedule_tasks_loop(self, kill_event):
-        print("Starting task-submission thread")
+        #print("Starting task-submission thread")
 
         self.tasks_scheduling = []
         while not kill_event.is_set():
@@ -161,7 +160,7 @@ class CawsExecutor(object):
             scheduling_decisions, self.tasks_scheduling = self.strategy.schedule(self.tasks_scheduling)
 
             for task, endpoint in scheduling_decisions:
-                print("Scheduling tasks")
+                #print("Scheduling tasks")
                 self._schedule_task(task, endpoint)
             self._transfer_manager.submit_pending_transfers()
 
@@ -200,7 +199,7 @@ class CawsExecutor(object):
 
         # Start Globus transfer of required files, if any
         if len(files) > 0:
-            print(f"Starting file transfers for task {task.task_id}")
+            #print(f"Starting file transfers for task {task.task_id}")
             endpoint.schedule(task)
             task.transfer_record = self._transfer_manager.transfer(files, 
                                                                   endpoint,
@@ -208,7 +207,7 @@ class CawsExecutor(object):
                                                                   callback = lambda : self._start_task(task, endpoint),
                                                                   failed_callback = lambda : self._transfer_error(task, endpoint))
         else:
-            print("Staring task")
+            #print("Staring task")
             self._start_task(task, endpoint)
 
     def _start_task(self, task, endpoint):
@@ -216,7 +215,7 @@ class CawsExecutor(object):
         task.endpoint_status = endpoint.state
         task.timing_info["began"] = datetime.now()
         
-        print("Submitting task to endpoint")
+        #print("Submitting task to endpoint")
         endpoint.submit(task)
         self.caws_db.send_task_message(task)
 
