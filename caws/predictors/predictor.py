@@ -163,7 +163,9 @@ class EndpointModel:
         cold_start_tasks = self.tasks[self.tasks["endpoint_status"] == "COLD"]
         if len(cold_start_tasks) == 0: # No information, or endpoint is always warm
             return 0
-        return (cold_start_tasks["task_try_time_running"] - cold_start_tasks["time_began"]).mean()
+        total_time = (cold_start_tasks["time_completed"] - cold_start_tasks["time_began"]) / np.timedelta64(1, "s")
+        wait_time = total_time - cold_start_tasks["running_duration"]
+        return wait_time.mean()
 
     def predict_static_power(self):
         return self.static_power
