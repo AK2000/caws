@@ -84,11 +84,17 @@ class Schedule:
                 schedule.append((task, self.name_to_endpoint[e]))
         return iter(schedule)
     
-    def add_task(self, endpoint, task):
+    def copy(self):
         s = Schedule()
-        s.endpoint_to_task = copy.deepcopy(self.endpoint_to_task)
-        s.endpoint_to_task[endpoint.name].append(task)
         s.name_to_endpoint = self.name_to_endpoint
+        # Copy dict and lists, but not tasks
+        for endpoint_name, tasks in self.endpoint_to_task.items():
+            s.endpoint_to_task[endpoint_name] = tasks.copy()
+        return s
+    
+    def add_task(self, endpoint, task):
+        s = self.copy()
+        s.endpoint_to_task[endpoint.name].append(task)
         if endpoint.name not in self.name_to_endpoint:
             s.name_to_endpoint[endpoint.name] = endpoint
         return s
