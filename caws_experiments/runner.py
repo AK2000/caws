@@ -156,7 +156,7 @@ def profile(endpoint_name,
         args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
         benchmark.func.mainify()
         benchmarks.append((benchmark.func, args, kwargs))
-        print("Running benchmark:", benchmark_name)
+        print("Setting Up Benchmark:", benchmark_name)
 
     task_range = np.logspace(0, np.log2(max_tasks), num=int(np.log2(max_tasks))+1, base=2, dtype='int', endpoint=True)
     print("Task Range: ", task_range)

@@ -11,7 +11,12 @@ def generate_inputs(src_endpoint, size, data_dir=""):
     size_generators = {
         'test' : 64,
         'small' : 512,
-        'large': 2048
+        'large': 2048,
+        '1': 64,
+        '2': 128,
+        '3': 256,
+        '4': 384,
+        '5': 512
     }
     dim = size_generators[size]
     a = np.random.rand(dim, dim)
