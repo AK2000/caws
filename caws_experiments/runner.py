@@ -191,6 +191,9 @@ def profile(endpoint_name,
                 for future in futures:
                     future.result() # Raise any exceptions
 
+                if (i+1) < len(benchmarks):
+                    predictor.update()
+
         print("Completed!")
 
 if __name__ == "__main__":

@@ -123,6 +123,7 @@ class EndpointModel:
             except:
                 return None
         tasks["energy_consumed"]  = tasks.apply(calc_energy, axis=1)
+        print(tasks[tasks["energy_consumed"] == 0])
 
         tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
         caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began"]]
@@ -150,6 +151,8 @@ class EndpointModel:
             data_matrix = data_matrix[:, ~pd.isnull(data_matrix).any(axis=0)]
             y_matrix = func_tasks[["running_duration", "energy_consumed"]].to_numpy()
             w, _, _, _ = np.linalg.lstsq(data_matrix.astype(np.float64),  y_matrix, rcond=None)
+
+            print(data_matrix, y_matrix[:, 1])
 
             self.regressions[func_name] = w
         else:
@@ -248,7 +251,7 @@ class Predictor:
         for endpoint in self.endpoints:
             prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
             tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
-            self.last_update_time[endpoint.name] = tasks["task_try_time_returned"].max()
+            self.last_update_time[endpoint.name] = tasks["task_try_time_returned"].max().to_pydatetime()
             
             with self.Session() as session:
                 connection = session.connection()
@@ -278,7 +281,8 @@ class Predictor:
 
     def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
-        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, task.features)
+        features = [f[0] for f in task.features]
+        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, features)
         if pred.runtime is None or pred.energy is None:
             if self.embedding_matrix is None:
                 with self.Session() as session:

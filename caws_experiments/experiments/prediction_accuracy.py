@@ -2,7 +2,8 @@ import json
 import tempfile
 import concurrent.futures
 import time
-from tqdm import tqdmfrom collections import defaultdict
+from tqdm import tqdm
+from collections import defaultdict
 
 import sqlalchemy
 from sqlalchemy import text, bindparam
@@ -26,7 +27,7 @@ def create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_
         print("Setting Up Benchmark:", benchmark_name)
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
         benchmark.func.mainify()
-        for size in input_sizes:
+        for size in sizes:
             args, kwargs = benchmark.generate_inputs(src_endpoint, size, data_dir=data_dir)
             benchmarks.append((benchmark.func, size, args, kwargs))
 
@@ -57,15 +58,12 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
     print("Measuring accuracy")
 
     benchmarks = []
-    for benchmark_name in benchmark_names:
-        if benchmark_name in exclude:
-            continue
-        
+    for benchmark_name in benchmark_names: 
         print("Setting Up Benchmark:", benchmark_name)
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
         benchmark.func.mainify()
         args, kwargs = benchmark.generate_inputs(src_endpoint, input_size, data_dir=data_dir)
-        benchmarks.append((benchmark.func, size, args, kwargs))
+        benchmarks.append((benchmark.func, args, kwargs))
 
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
 
@@ -73,7 +71,7 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
     task_ids = []
     with caws.CawsExecutor(endpoints, 
                            strategy,
-                           caws_database_url=config_obj["caws_monitoring_db"],
+                           caws_database_url=monitoring_url,
                            predictor=predictor) as executor:
 
         print("Warming up endpoint!")
@@ -86,25 +84,29 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
                 for _ in range(ntasks):
                     futures.append(executor.submit(func, *args, **kwargs))
 
-            predictions_by_benchmark[func.func.__name__] = predictor.predict_execution(endpoints[0], futures[0].task_info)
-            
+            predictions_by_benchmark[futures[0].task_info.function_name] = predictor.predict_execution(endpoints[0], futures[0].task_info)
+
             concurrent.futures.wait(futures)
             for future in futures:
                 future.result() # Raise any exceptions
-                tasks_ids.append(future.task_info.task_id)
+                task_ids.append(future.task_info.task_id)
 
     engine = sqlalchemy.create_engine(monitoring_url)
     with engine.begin() as connection:
         query = text("""SELECT func_name, running_duration, energy_consumed """
                 """FROM caws_task """
-                """WHERE (caws_task_id in :task_ids))""")
+                """WHERE (caws_task_id in :task_ids)""")
         query = query.bindparams(bindparam("task_ids", task_ids, expanding=True))
         task_measurements = pd.read_sql(query, connection).dropna()
-        task_measurements.groupby("func_name").agg("mean").reset_index()
+        print(task_measurements)
 
-    task_measurements["size"] = size
-    task_measurements["runtime_pred"] = pd.Series({k, v.runtime for k,v in predictions_by_benchmark.items()})
-    task_measurements["energy_pred"] = pd.Series({k, v.energy for k,v in predictions_by_benchmark.items()})
+        task_measurements = task_measurements.groupby("func_name").agg("mean")
+
+    print(task_measurements)
+    print(pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()}))
+    task_measurements["size"] = input_size
+    task_measurements["runtime_pred"] = pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()})
+    task_measurements["energy_pred"] = pd.Series({k: v.energy for k,v in predictions_by_benchmark.items()})
     task_measurements["runtime_error"] = (task_measurements["running_duration"] - task_measurements["runtime_pred"]).abs()
     task_measurements["energy_error"] = (task_measurements["energy_consumed"] - task_measurements["energy_pred"]).abs()
 
@@ -116,13 +118,10 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
 def cli():
     pass
 
-@cli.command()
-@click.argument("benchmark_name", type=str)
-@click.option(
-    "endpoint_name", "-e",
-    required=True,
-    type=str, 
-    help="Name of endpoint in config file"
+@cli.command(name="features")
+@click.argument(
+    "endpoint_name",
+    type=str,
 )
 @click.option(
     "--config",
@@ -143,11 +142,6 @@ def cli():
     help="Location of experiment config.",
 )
 @click.option(
-    '--warmup', '-w',
-    is_flag=True,
-    help="Warmup the executor before running tasks"
-)
-@click.option(
     "--exclude", "-e",
     multiple=True,
     help="Benchmarks to exclude."
@@ -155,14 +149,13 @@ def cli():
 @click.option(
     "--result_path", "-r",
     type=str,
-    default="results.csv"
+    default="results.csv",
     help="Place to store results file"
 )
-def feature_preiction_accuracy(endpoint_name
+def feature_prediction_accuracy(endpoint_name,
                                config,
                                data_dir,
                                ntasks,
-                               warmup,
                                exclude,
                                result_path):
 
@@ -180,10 +173,13 @@ def feature_preiction_accuracy(endpoint_name
     
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
 
-    collect_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_names, train_sizes, monitoring_url, ntasks)
+    create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_names, train_sizes, monitoring_url, ntasks)
     measurements = []
     for size in pred_sizes:
-        measurements.append(measure_accuracy(predictor, endpoints, src_endpoint data_dir, benchmark_names, size, monitoring_url, ntasks))
+        measurements.append(measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_names, size, monitoring_url, ntasks))
 
     results = pd.concat(measurements)
     results.to_csv(result_path)
+
+if __name__ == "__main__":
+    cli()
