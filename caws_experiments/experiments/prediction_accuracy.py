@@ -45,7 +45,7 @@ def create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_
             # Ensure all tasks are batched together
             futures = []
             with executor.scheduling_lock:
-                for _ in range(ntasks):
+                for _ in range(ntasks * len(endpoints)):
                     futures.append(executor.submit(func, *args, **kwargs))
             
             concurrent.futures.wait(futures)
@@ -98,11 +98,10 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
                 """WHERE (caws_task_id in :task_ids)""")
         query = query.bindparams(bindparam("task_ids", task_ids, expanding=True))
         task_measurements = pd.read_sql(query, connection).dropna()
-        task_measurements = task_measurements.groupby("func_name").agg("mean")
 
     task_measurements["size"] = input_size
-    task_measurements["runtime_pred"] = pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()})
-    task_measurements["energy_pred"] = pd.Series({k: v.energy for k,v in predictions_by_benchmark.items()})
+    task_measurements.merge(pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()}, name="runtime_pred"), left_on="func_name", right_index=True)
+    task_measurements.merge(pd.Series({k: v.energy for k,v in predictions_by_benchmark.items()}, name="energy_pred"), left_on="func_name", right_index=True)
     task_measurements["runtime_error"] = (task_measurements["running_duration"] - task_measurements["runtime_pred"]).abs()
     task_measurements["energy_error"] = (task_measurements["energy_consumed"] - task_measurements["energy_pred"]).abs()
 
@@ -114,15 +113,17 @@ def cli():
     pass
 
 @cli.command(name="features")
-@click.argument(
-    "endpoint_name",
-    type=str,
-)
 @click.option(
     "--config",
     required=True,
     type=click.Path(readable=True),
     help="Location of experiment config.",
+)
+@click.option(
+    "--endpoints", "-l",
+    required=False,
+    multiple=True,
+    help="Endpoint to use. Default (all)"
 )
 @click.option(
     "--data_dir", "-d",
@@ -147,12 +148,12 @@ def cli():
     default="results.csv",
     help="Place to store results file"
 )
-def feature_prediction_accuracy(endpoint_name,
-                               config,
-                               data_dir,
-                               ntasks,
-                               exclude,
-                               result_path):
+def feature_prediction_accuracy(config,
+                                endpoints,
+                                data_dir,
+                                ntasks,
+                                exclude,
+                                result_path):
 
     config_obj = json.load(open(config, "r"))
     benchmark_names = ["bfs", "mst", "pagerank", "matmul"]
@@ -160,18 +161,29 @@ def feature_prediction_accuracy(endpoint_name,
     train_sizes = ["1", "3", "4"]
     pred_sizes = ["2", "5"]
 
-    endpoint = utils.load_endpoint(config_obj, endpoint_name)
-    endpoints = [endpoint,]
-    predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
+    endpoint_names = endpoints if len(endpoints) > 0 else config_obj["endpoints"].keys()
+    endpoints = []
+    src_endpoint = None
+    for endpoint_name in endpoint_names:
+        endpoint = utils.load_endpoint(config_obj, endpoint_name)
+        endpoints.append(endpoint)
+        if endpoint_name == config_obj["host"]:
+            src_endpoint = endpoint
 
-    monitoring_url = config_obj["caws_monitoring_db"]
+    if src_endpoint is None:
+        src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     
-    src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
-
+    
+    monitoring_url = config_obj["caws_monitoring_db"]
+    predictor = Predictor(endpoints, monitoring_url)
     create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_names, train_sizes, monitoring_url, ntasks)
+    
     measurements = []
-    for size in pred_sizes:
-        measurements.append(measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_names, size, monitoring_url, ntasks))
+    for endpoint in endpoints:
+        for size in pred_sizes:
+            execution_times = measure_accuracy(predictor, [endpoint,], src_endpoint, data_dir, benchmark_names, size, monitoring_url, ntasks)
+            execution_times["endpoint"] = endpoint.name
+            measurements.append(execution_times)
 
     results = pd.concat(measurements)
     results.to_csv(result_path)
