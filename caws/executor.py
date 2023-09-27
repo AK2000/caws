@@ -156,7 +156,11 @@ class CawsExecutor(object):
             with self.scheduling_lock:
                 with self.ready_tasks_lock:
                     self.tasks_scheduling.extend(self.ready_tasks)
-                    self.ready_tasks = []
+                    self.ready_tasks.clear()
+            
+            if len(self.tasks_scheduling) == 0:
+                time.sleep(self._task_scheduling_sleep)
+                continue
             
             scheduling_decisions, self.tasks_scheduling = self.strategy.schedule(self.tasks_scheduling)
 

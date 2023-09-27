@@ -134,6 +134,7 @@ class EndpointModel:
 
     def predict_func(self, func_name, features):
         categorical_features = [(i, v) for i, (v, t) in enumerate(features) if t == CawsFeatureType.CATEGORICAL]
+        continuous_features = [v for v, t in features if t == CawsFeatureType.CONTINUOUS]
         if func_name not in self.regressions:
             func_tasks = self.tasks[self.tasks["func_name"] == func_name]
             func_tasks = func_tasks.dropna(subset=["running_duration", "energy_consumed"])
@@ -142,8 +143,11 @@ class EndpointModel:
 
             # func_tasks["value"] = func_tasks['value'].fillna(1)
             func_tasks = func_tasks.sort_values("feature_id")
+            df["features"] = df[['value', 'feature_type']].apply(tuple, axis=1)
             func_tasks = func_tasks.groupby("caws_task_id").agg(
-                    {'running_duration': 'first', 'energy_consumed': 'first', 'value': list, "feature_type": list})
+                    {'running_duration': 'first', 'energy_consumed': 'first', 'value': [lambda s: [i[0] for i in s if i[1] == "CONTINUOUS"], lambda s: [i[0] for i in s if i[1] == "CATEGORICAL"]]})
+            print(func_tasks)
+            quit()
 
             data_matrix = np.stack(func_tasks["value"].values)
             (n, f) = data_matrix.shape
