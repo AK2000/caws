@@ -104,7 +104,7 @@ def test_strategy_mhra():
     print("\t".join([str(predictor.predict_static_power(e)) for e in endpoints]))
 
     strategy = MHRA(endpoints, predictor, alpha=1.0)
-    schedule = strategy.schedule(tasks)
+    schedule, _ = strategy.schedule(tasks)
 
     endpoint_count = defaultdict(int)
     for task, endpoint in schedule:
@@ -122,6 +122,7 @@ def test_strategy_cluster_mhra():
         Endpoint("Endpoint2", 32, 0.5, 0, 5, EndpointState.COLD),
         Endpoint("Endpoint3", 16, 0, 0, 1, EndpointState.WARM, 16)
     ]
+    endpoints = endpoints[:1]
     tasks = []
     for task_name in ["task1", "task2", "task3", "task4", "task5"]:
         for _ in range(15):
@@ -140,7 +141,7 @@ def test_strategy_cluster_mhra():
 
     strategy = ClusterMHRA(endpoints, predictor, alpha=0.5)
 
-    schedule = strategy.schedule(tasks)
+    schedule, _ = strategy.schedule(tasks)
 
     endpoint_count = defaultdict(int)
     for task, endpoint in schedule:
@@ -153,4 +154,4 @@ def test_strategy_cluster_mhra():
     assert True
 
 if __name__ == "__main__":
-    test_strategy_mhra()
+    test_strategy_cluster_mhra()

@@ -104,19 +104,19 @@ def identity(tasks_by_runtime, tasks_by_energy):
     return [t[1] for t in tasks_by_runtime]
 
 def longest_processing_time(tasks_by_runtime, tasks_by_energy):
-    tasks_by_runtime = sorted(tasks_by_runtime, reverse=True)
+    tasks_by_runtime = sorted(tasks_by_runtime, key=lambda t: t[0], reverse=True)
     return [t[1] for t in tasks_by_runtime]
 
 def shortest_processing_time(tasks_by_runtime, tasks_by_energy):
-    tasks_by_runtime = sorted(tasks_by_runtime)
+    tasks_by_runtime = sorted(tasks_by_runtime, key=lambda t: t[0])
     return [t[1] for t in tasks_by_runtime]
 
 def greatest_energy(tasks_by_runtime, tasks_by_energy):
-    tasks_by_energy = sorted(tasks_by_energy, reverse=True)
+    tasks_by_energy = sorted(tasks_by_energy, key=lambda t: t[0], reverse=True)
     return [t[1] for t in tasks_by_energy]
 
 def least_energy(tasks_by_runtime, tasks_by_energy):
-    tasks_by_energy = sorted(tasks_by_energy)
+    tasks_by_energy = sorted(tasks_by_energy, key=lambda t: t[0])
     return [t[1] for t in tasks_by_energy]
 
 class ClusterMHRA(Strategy):
@@ -212,6 +212,7 @@ class ClusterMHRA(Strategy):
 
     def schedule(self, tasks):
         tasks_by_runtime, tasks_by_energy, task_embeddings, task_preds = self.preprocess(tasks)
+        tasks = longest_processing_time(tasks_by_runtime, tasks_by_energy)
         clusters = self.cluster(tasks_by_energy, task_embeddings)
         print(len(clusters))
 
@@ -247,7 +248,7 @@ class ClusterMHRA(Strategy):
                 mock_endpoint = mock_endpoints[0]
                 cluster_costs = cluster_preds[cluster_id][mock_endpoint.endpoint.name]
                 endpoint_runtime, endpoint_energy = mock_endpoint.predict(cluster_costs)
-                makespan_runtime = max(*[e.runtime() for e in mock_endpoints[1:]], endpoint_runtime)
+                makespan_runtime = max([e.runtime() for e in mock_endpoints[1:]] + [endpoint_runtime])
                 makespan_energy = sum([e.energy() for e in mock_endpoints[1:]]+[endpoint_energy])
 
                 best_endpoint = mock_endpoint
