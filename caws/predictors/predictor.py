@@ -248,7 +248,10 @@ class Predictor:
         for endpoint in self.endpoints:
             prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
             tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
-            self.last_update_time[endpoint.name] = tasks["task_try_time_returned"].max().to_pydatetime()
+            if len(tasks) == 0:
+                continue
+
+            self.last_update_time[endpoint.name] = tasks["task_try_time_returned"].dropna().max().to_pydatetime()
             
             with self.Session() as session:
                 connection = session.connection()

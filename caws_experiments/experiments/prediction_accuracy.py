@@ -38,19 +38,21 @@ def create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_
                            predictor=predictor) as executor:
 
         print("Warming up endpoint!")
-        fut = executor.submit(time.sleep, 5)
-        fut.result()
+        futures = []
+        for _ in range(len(endpoints)):
+            futures.append(executor.submit(time.sleep, 5))
+        concurrent.futures.wait(futures)
 
+        futures = []
         for i, (func, size, args, kwargs) in tqdm(enumerate(benchmarks)):
             # Ensure all tasks are batched together
-            futures = []
             with executor.scheduling_lock:
                 for _ in range(ntasks * len(endpoints)):
                     futures.append(executor.submit(func, *args, **kwargs))
             
-            concurrent.futures.wait(futures)
-            for future in futures:
-                future.result() # Raise any exceptions
+        concurrent.futures.wait(futures)
+        for future in futures:
+            future.result() # Raise any exceptions
 
     print("Completed!")
 
@@ -100,8 +102,8 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
         task_measurements = pd.read_sql(query, connection).dropna()
 
     task_measurements["size"] = input_size
-    task_measurements.merge(pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()}, name="runtime_pred"), left_on="func_name", right_index=True)
-    task_measurements.merge(pd.Series({k: v.energy for k,v in predictions_by_benchmark.items()}, name="energy_pred"), left_on="func_name", right_index=True)
+    task_measurements = task_measurements.merge(pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()}, name="runtime_pred"), left_on="func_name", right_index=True)
+    task_measurements = task_measurements.merge(pd.Series({k: v.energy for k,v in predictions_by_benchmark.items()}, name="energy_pred"), left_on="func_name", right_index=True)
     task_measurements["runtime_error"] = (task_measurements["running_duration"] - task_measurements["runtime_pred"]).abs()
     task_measurements["energy_error"] = (task_measurements["energy_consumed"] - task_measurements["energy_pred"]).abs()
 
