@@ -82,7 +82,7 @@ class MockEndpoint:
         return energy
 
     def runtime(self):
-        if self.state == EndpointState.COLD:
+        if self.state == EndpointState.COLD and self._runtime > 0:
             return self._runtime + self.cold_start_time
         return self._runtime
 
@@ -235,11 +235,11 @@ class MHRA(Strategy):
                 best_cost = cur_cost
                 best_runtime = max([e.runtime() for e in mock_endpoints])
                 best_energy = sum([e.energy() for e in mock_endpoints])
-                transfer_runtime, transfer_energy = self.calculate_transfer(temp_schedule)
+                transfer_runtime, transfer_energy = self.calculate_transfer(cur_schedule)
                 best_energy += transfer_energy
 
         print(f"After scheduling, tasks would take: ")
         print(f"\t{best_runtime} s")
         print(f"\t{best_energy} J")
 
-        return best_schedule
+        return best_schedule, []

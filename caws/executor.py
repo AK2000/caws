@@ -160,12 +160,14 @@ class CawsExecutor(object):
             
             scheduling_decisions, self.tasks_scheduling = self.strategy.schedule(self.tasks_scheduling)
 
+            task_count = 0
             for task, endpoint in scheduling_decisions:
                 logger.debug("Scheduling tasks")
                 self._schedule_task(task, endpoint)
+                task_count += 1
             self._transfer_manager.submit_pending_transfers()
 
-            if len(scheduling_decisions) == 0:
+            if task_count == 0:
                 time.sleep(self._task_scheduling_sleep)
 
     def _schedule_task(self, task, endpoint):

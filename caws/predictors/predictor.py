@@ -125,7 +125,7 @@ class EndpointModel:
         tasks["energy_consumed"]  = tasks.apply(calc_energy, axis=1)
 
         tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
-        caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began"]]
+        caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began", "time_completed"]]
 
         tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
         self.tasks = pd.concat([self.tasks, tasks])
@@ -133,6 +133,7 @@ class EndpointModel:
         return tasks, self.static_power, self.energy_consumed
 
     def predict_func(self, func_name, features):
+        categorical_features = [(i, v) for i, (v, t) in enumerate(features) if t == CawsFeatureType.CATEGORICAL]
         if func_name not in self.regressions:
             func_tasks = self.tasks[self.tasks["func_name"] == func_name]
             func_tasks = func_tasks.dropna(subset=["running_duration", "energy_consumed"])
@@ -142,7 +143,7 @@ class EndpointModel:
             # func_tasks["value"] = func_tasks['value'].fillna(1)
             func_tasks = func_tasks.sort_values("feature_id")
             func_tasks = func_tasks.groupby("caws_task_id").agg(
-                {'running_duration': 'first', 'energy_consumed': 'first', 'value': list})
+                    {'running_duration': 'first', 'energy_consumed': 'first', 'value': list, "feature_type": list})
 
             data_matrix = np.stack(func_tasks["value"].values)
             (n, f) = data_matrix.shape
@@ -203,7 +204,7 @@ class Predictor:
         self.Session = sessionmaker(bind=self.eng)
         with self.Session() as session:
             connection = session.connection()
-            query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+            query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, time_completed, endpoint_status, """
                 """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
                 """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
                 """AND (endpoint_id in :endpoint_ids))""")
@@ -255,7 +256,7 @@ class Predictor:
             
             with self.Session() as session:
                 connection = session.connection()
-                query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, time_completed, endpoint_status, """
                     """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
                     """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
                     """AND (endpoint_id = :endpoint_id)  AND (time_completed > :start_time)) """)
@@ -281,13 +282,12 @@ class Predictor:
 
     def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
-        features = [f[0] for f in task.features]
-        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, features)
+        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, task.features)
         if pred.runtime is None or pred.energy is None:
             if self.embedding_matrix is None:
                 with self.Session() as session:
                     connection = session.connection()
-                    query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, endpoint_status, """
+                    query = text("""SELECT caws_task.caws_task_id, func_name, funcx_task_id, endpoint_id, time_began, time_completed, endpoint_status, """
                         """energy_consumed, running_duration, features.feature_id, features.feature_type, features.value """
                         """FROM caws_task LEFT JOIN features ON caws_task.caws_task_id=features.caws_task_id WHERE ((task_status='COMPLETED') """
                         """AND (endpoint_id in :endpoint_ids))""")

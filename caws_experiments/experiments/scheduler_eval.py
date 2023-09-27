@@ -133,7 +133,7 @@ def compare(config,
     for benchmark_name in benchmark_names:
         print("Setting Up Benchmark:", benchmark_name)
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
-        args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
+        args, kwargs = benchmark.generate_inputs(src_endpoint, "small", data_dir=data_dir)
         benchmark.func.mainify()
         benchmarks.append((benchmark.func, args, kwargs))
         
@@ -259,7 +259,7 @@ def sensitivity(config,
     for benchmark_name in benchmark_names:
         print("Setting Up Benchmark:", benchmark_name)
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
-        args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
+        args, kwargs = benchmark.generate_inputs(src_endpoint, "small", data_dir=data_dir)
         benchmark.func.mainify()
         benchmarks.append((benchmark.func, args, kwargs))
         
@@ -277,3 +277,6 @@ def sensitivity(config,
         with open(result_path, "a") as fp:
             fp.write(json.dumps(results))
             fp.write("\n")
+
+if __name__ == "__main__":
+    cli()

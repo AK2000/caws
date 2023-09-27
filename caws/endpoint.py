@@ -121,6 +121,7 @@ class Endpoint:
         self.min_blocks = min_blocks
         self.max_blocks = max_blocks
         self.parallelism = parallelism
+        self.shutdown_time = shutdown_time
 
         self.active_slots = self.slots_per_block * self.min_blocks
         self.active_tasks = 0
