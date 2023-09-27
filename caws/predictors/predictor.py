@@ -82,8 +82,8 @@ class EndpointModel:
             df_combined.replace([np.inf, -np.inf], np.nan, inplace=True)
             df_combined = df_combined.dropna()
             regr = ElasticNet(random_state=0, positive=True)
-            regr.fit(df_combined[["perf_instructions_retired", "perf_llc_misses"]].values, df_combined["power"])
-            df_combined["pred_power"] = regr.predict(df_combined[["perf_instructions_retired", "perf_llc_misses"]].values)
+            regr.fit(df_combined[["perf_instructions_retired", "perf_llc_misses", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"]].values, df_combined["power"])
+            df_combined["pred_power"] = regr.predict(df_combined[["perf_instructions_retired", "perf_llc_misses", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"]].values)
 
             if self.static_power is None:
                 self.static_power = regr.intercept_
@@ -94,7 +94,7 @@ class EndpointModel:
                 worker_df = df_split_clean[block_id][i]
                 pid = worker_df["pid"].iloc[0]
                 worker_df = pd.merge_asof(energy[energy["block_id"] == block_id], worker_df, on="timestamp", direction="backward").dropna()
-                worker_df["pred_power"] = regr.predict(worker_df[["perf_instructions_retired", "perf_llc_misses"]]) - regr.intercept_
+                worker_df["pred_power"] = regr.predict(worker_df[["perf_instructions_retired", "perf_llc_misses", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"]]) - regr.intercept_
 
                 worker_df = pd.merge_ordered(
                     worker_df, tasks.loc[(tasks["pid"]==pid) & (tasks["block_id"]==block_id), "task_try_time_running"].rename("timestamp"),
@@ -123,7 +123,6 @@ class EndpointModel:
             except:
                 return None
         tasks["energy_consumed"]  = tasks.apply(calc_energy, axis=1)
-        print(tasks[tasks["energy_consumed"] == 0])
 
         tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
         caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began"]]
@@ -151,8 +150,6 @@ class EndpointModel:
             data_matrix = data_matrix[:, ~pd.isnull(data_matrix).any(axis=0)]
             y_matrix = func_tasks[["running_duration", "energy_consumed"]].to_numpy()
             w, _, _, _ = np.linalg.lstsq(data_matrix.astype(np.float64),  y_matrix, rcond=None)
-
-            print(data_matrix, y_matrix[:, 1])
 
             self.regressions[func_name] = w
         else:

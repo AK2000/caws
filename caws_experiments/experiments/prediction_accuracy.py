@@ -98,19 +98,14 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
                 """WHERE (caws_task_id in :task_ids)""")
         query = query.bindparams(bindparam("task_ids", task_ids, expanding=True))
         task_measurements = pd.read_sql(query, connection).dropna()
-        print(task_measurements)
-
         task_measurements = task_measurements.groupby("func_name").agg("mean")
 
-    print(task_measurements)
-    print(pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()}))
     task_measurements["size"] = input_size
     task_measurements["runtime_pred"] = pd.Series({k: v.runtime for k,v in predictions_by_benchmark.items()})
     task_measurements["energy_pred"] = pd.Series({k: v.energy for k,v in predictions_by_benchmark.items()})
     task_measurements["runtime_error"] = (task_measurements["running_duration"] - task_measurements["runtime_pred"]).abs()
     task_measurements["energy_error"] = (task_measurements["energy_consumed"] - task_measurements["energy_pred"]).abs()
 
-    print(task_measurements)
     return task_measurements
 
 
