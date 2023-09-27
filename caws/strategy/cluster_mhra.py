@@ -308,7 +308,7 @@ class ClusterMHRA(Strategy):
         print(f"\t{best_energy} J")
 
         endpoint_count = defaultdict(int)
-        for task, endpoint in schedule:
+        for task, endpoint in best_schedule:
             endpoint_count[endpoint.name] += 1
 
         print("Generated Schedule: ")

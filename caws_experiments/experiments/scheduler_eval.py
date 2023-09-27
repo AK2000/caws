@@ -53,7 +53,7 @@ def run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url):
         _, _, energy = endpoint.collect_monitoring_info(start_time)
         total_energy += energy["total_energy"].dropna().sum()
 
-    runtime = (end_time - start_time).total_seconds
+    runtime = (end_time - start_time).total_seconds()
 
     return {"runtime": runtime, "energy": total_energy}
 
@@ -144,8 +144,9 @@ def compare(config,
     print(f"Testing MHRA Strategy")
     strategy = MHRA(endpoints, predictor, alpha=0.5)
     results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
-    results["strategy"] = "round_robin"
-    results["alpha"] = None
+    results["strategy"] = "mhra"
+    results["alpha"] = 0.5
+    results["ntasks"] = ntasks
     with open(result_path, "a") as fp:
         fp.write(json.dumps(results))
         fp.write("\n")
@@ -156,8 +157,9 @@ def compare(config,
     print(f"Testing ClusterMHRA Strategy")
     strategy = ClusterMHRA(endpoints, predictor, alpha=0.5)
     results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
-    results["strategy"] = "round_robin"
-    results["alpha"] = None
+    results["strategy"] = "cluster_mhra"
+    results["alpha"] = 0.5
+    results["ntasks"] = ntasks
     with open(result_path, "a") as fp:
         fp.write(json.dumps(results))
         fp.write("\n")
@@ -170,6 +172,7 @@ def compare(config,
     results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
     results["strategy"] = "round_robin"
     results["alpha"] = None
+    results["ntasks"] = ntasks
     with open(result_path, "a") as fp:
         fp.write(json.dumps(results))
         fp.write("\n")
@@ -183,6 +186,7 @@ def compare(config,
         results = run_one([endpoint,], strategy, predictor, benchmarks, ntasks, monitoring_url)
         results["strategy"] = endpoint.name
         results["alpha"] = None
+        results["ntasks"] = ntasks
 
         with open(result_path, "a") as fp:
             fp.write(json.dumps(results))
@@ -273,7 +277,8 @@ def sensitivity(config,
         strategy = ClusterMHRA(endpoints, predictor, alpha=alpha)
         results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
         results["strategy"] = "round_robin"
-        results["alpha"] = None
+        results["alpha"] = alpha
+        results["ntasks"] = ntasks
         with open(result_path, "a") as fp:
             fp.write(json.dumps(results))
             fp.write("\n")
