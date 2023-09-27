@@ -8,6 +8,7 @@ import numpy as np
 import numpy.linalg
 from scipy import interpolate, integrate
 from scipy.stats import bootstrap
+from scipy.optimize import nnls
 import pandas as pd
 from sklearn.linear_model import ElasticNet
 from fancyimpute import SoftImpute, NuclearNormMinimization
@@ -17,6 +18,7 @@ from sqlalchemy import text, bindparam, update, MetaData, Table
 from sqlalchemy.orm import sessionmaker
 
 from caws.database import CawsDatabase
+from caws.features import CawsFeatureType
 
 Prediction = namedtuple("Prediction", ["runtime", "energy"])
 
@@ -133,7 +135,7 @@ class EndpointModel:
         return tasks, self.static_power, self.energy_consumed
 
     def predict_func(self, func_name, features):
-        categorical_features = [(i, v) for i, (v, t) in enumerate(features) if t == CawsFeatureType.CATEGORICAL]
+        categorical_features = tuple([v for v, t in features if t == CawsFeatureType.CATEGORICAL])
         continuous_features = [v for v, t in features if t == CawsFeatureType.CONTINUOUS]
         if func_name not in self.regressions:
             func_tasks = self.tasks[self.tasks["func_name"] == func_name]
@@ -143,25 +145,36 @@ class EndpointModel:
 
             # func_tasks["value"] = func_tasks['value'].fillna(1)
             func_tasks = func_tasks.sort_values("feature_id")
-            df["features"] = df[['value', 'feature_type']].apply(tuple, axis=1)
+            func_tasks["features"] = func_tasks[['value', 'feature_type']].apply(tuple, axis=1)
             func_tasks = func_tasks.groupby("caws_task_id").agg(
-                    {'running_duration': 'first', 'energy_consumed': 'first', 'value': [lambda s: [i[0] for i in s if i[1] == "CONTINUOUS"], lambda s: [i[0] for i in s if i[1] == "CATEGORICAL"]]})
-            print(func_tasks)
-            quit()
+                    running_duration = ("running_duration", 'first'),
+                    energy_consumed = ("energy_consumed", 'first'),
+                    feature_vals=('features', lambda s: [i[0] for i in s if i[1] == "CONTINUOUS"]), 
+                    categories=('features', lambda s: tuple([i[0] for i in s if i[1] == "CATEGORICAL"]))
+            )
+            func_tasks = func_tasks[func_tasks["categories"] == categorical_features]
+            func_tasks["avg_power"] = func_tasks["energy_consumed"] / func_tasks["running_duration"]
 
-            data_matrix = np.stack(func_tasks["value"].values)
+            data_matrix = np.stack(func_tasks["feature_vals"].values)
             (n, f) = data_matrix.shape
             data_matrix = np.c_[data_matrix, np.ones(n)]
             data_matrix = data_matrix[:, ~pd.isnull(data_matrix).any(axis=0)]
-            y_matrix = func_tasks[["running_duration", "energy_consumed"]].to_numpy()
-            w, _, _, _ = np.linalg.lstsq(data_matrix.astype(np.float64),  y_matrix, rcond=None)
+            y_matrix = func_tasks[["running_duration", "avg_power"]].to_numpy()
+            w0, _ = nnls(data_matrix.astype(np.float64),  y_matrix[:, 0])
+            w1, _ = nnls(data_matrix.astype(np.float64),  y_matrix[:, 1])
+            w = np.stack([w0, w1], axis=1)
 
-            self.regressions[func_name] = w
+            self.regressions[(func_name, categorical_features)] = w
         else:
-            w = self.regressions[func_name]
+            w = self.regressions[(func_name, categorical_features)]
 
-        features.append(1)
-        y = np.array(features) @ w
+        continuous_features.append(1)
+        y = np.array(continuous_features) @ w
+        assert y[1] > 0, f"Predicted negative power, {func_name}, {continuous_features}, {w}, {y}"
+        assert y[0] > 0, f"Predicted negative runtime, {func_name}, {continuous_features}, {w}, {y}"
+
+        y[1] *= y[0]
+
         return Prediction(y[0], y[1])
 
     def predict_cold_start(self):
@@ -328,6 +341,9 @@ class Predictor:
         return pred
 
     def predict_transfer(self, src_endpoint_id, dst_endpoint_id, size, files):
+        if src_endpoint_id == dst_endpoint_id:
+            return Prediction(0, 0)
+
         if (src_endpoint_id, dst_endpoint_id) not in self.transfer_runtime_models:
             transfers = self.transfers[
                 (self.transfers["src_endpoint_id"] == src_endpoint_id) \

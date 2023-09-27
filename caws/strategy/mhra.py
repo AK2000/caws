@@ -17,7 +17,7 @@ class MockEndpoint:
         self.parallelism = endpoint.parallelism
         self.shutdown_time = endpoint.shutdown_time
 
-        self.active_blocks = self.active_slots / self.slots_per_block
+        self.active_blocks = max(self.active_slots / self.slots_per_block, self.min_blocks)
         if self.state == EndpointState.WARMING:
             self.active_blocks += 1
 
@@ -79,6 +79,7 @@ class MockEndpoint:
     def energy(self):
         energy = self.total_task_energy + (self._runtime * self.active_blocks * self.static_power)
         energy += (self.active_blocks - self.min_blocks) * self.shutdown_time * self.static_power
+        assert energy >= 0, f"Endpoint energy predicted_negative: {self.total_task_energy}, {self._runtime}, {self.static_power}, {self.active_blocks}, {self.min_blocks}"
         return energy
 
     def runtime(self):
@@ -156,8 +157,8 @@ class MHRA(Strategy):
         aggregate_transfer_files = defaultdict(int)
         for task, dst_endpoint in schedule:
             for src_endpoint_id in task.transfer_size.keys():
-                aggregate_transfer_size[(endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_size[endpoint_id]
-                aggregate_transfer_files[(endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_files[endpoint_id]
+                aggregate_transfer_size[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_size[src_endpoint_id]
+                aggregate_transfer_files[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_files[src_endpoint_id]
 
         total_runtime = 0
         total_energy = 0
@@ -182,6 +183,7 @@ class MHRA(Strategy):
 
             for task in tasks:
                 mock_endpoint = mock_endpoints[0]
+
                 task_runtime, task_energy = self.predictor.predict_execution(mock_endpoint.endpoint, task)
                 endpoint_runtime, endpoint_energy = mock_endpoint.predict(task_runtime, task_energy)
                 makespan_runtime = max(*[e.runtime() for e in mock_endpoints[1:]], endpoint_runtime)
@@ -241,5 +243,13 @@ class MHRA(Strategy):
         print(f"After scheduling, tasks would take: ")
         print(f"\t{best_runtime} s")
         print(f"\t{best_energy} J")
+
+        endpoint_count = defaultdict(int)
+        for task, endpoint in best_schedule:
+            endpoint_count[endpoint.name] += 1
+
+        print("Generated Schedule: ")
+        for e, v in endpoint_count.items():
+            print(f"Number of tasks on endpoint {e}: {v}")
 
         return best_schedule, []

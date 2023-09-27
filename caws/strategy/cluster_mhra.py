@@ -24,6 +24,7 @@ class MockEndpoint:
         self.active_blocks = self.active_slots / self.slots_per_block
         if self.state == EndpointState.WARMING or len(endpoint.scheduled_tasks) > 0:
             self.active_blocks = max(self.active_blocks, 1)
+        self.active_blocks = max(self.active_blocks, self.min_blocks)
         
         self.cold_start_time = cold_start
 
@@ -197,8 +198,8 @@ class ClusterMHRA(Strategy):
         aggregate_transfer_files = defaultdict(int)
         for task, dst_endpoint in schedule:
             for src_endpoint_id in task.transfer_size.keys():
-                aggregate_transfer_size[(endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_size[endpoint_id]
-                aggregate_transfer_files[(endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_files[endpoint_id]
+                aggregate_transfer_size[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_size[src_endpoint_id]
+                aggregate_transfer_files[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_files[src_endpoint_id]
 
         total_runtime = 0
         total_energy = 0
@@ -289,6 +290,8 @@ class ClusterMHRA(Strategy):
             print(f"With heuristic {heuristic.__name__}, tasks would take: ")
             makespan_runtime = max([e.runtime() for e in mock_endpoints])
             makespan_energy = sum([e.energy() for e in mock_endpoints])
+            transfer_runtime, transfer_energy = self.calculate_transfer(cur_schedule)
+            makespan_energy += transfer_energy
             cost = self.objective(makespan_runtime, makespan_energy)
             print(f"\t{makespan_runtime} s")
             print(f"\t{makespan_energy} J")
@@ -304,4 +307,12 @@ class ClusterMHRA(Strategy):
         print(f"\t{best_runtime} s")
         print(f"\t{best_energy} J")
 
-        return best_schedule
+        endpoint_count = defaultdict(int)
+        for task, endpoint in schedule:
+            endpoint_count[endpoint.name] += 1
+
+        print("Generated Schedule: ")
+        for e, v in endpoint_count.items():
+            print(f"Number of tasks on endpoint {e}: {v}")
+
+        return best_schedule, []

@@ -53,7 +53,7 @@ def run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url):
         _, _, energy = endpoint.collect_monitoring_info(start_time)
         total_energy += energy["total_energy"].dropna().sum()
 
-    runtime = end_time - start_time
+    runtime = (end_time - start_time).total_seconds
 
     return {"runtime": runtime, "energy": total_energy}
 
