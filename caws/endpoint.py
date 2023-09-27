@@ -62,6 +62,7 @@ class Endpoint:
                  max_blocks=1,
                  parallelism=0.5,
                  shutdown_time=10,
+                 perf_counters = ["perf_instructions_retired", "perf_llc_misses"],
                  tz_offset=0):
                  
         self.name = name
@@ -122,6 +123,7 @@ class Endpoint:
         self.max_blocks = max_blocks
         self.parallelism = parallelism
         self.shutdown_time = shutdown_time
+        self.perf_counters = perf_counters
 
         self.active_slots = self.slots_per_block * self.min_blocks
         self.active_tasks = 0

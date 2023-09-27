@@ -35,16 +35,17 @@ def sum_resources(df1, df2, columns=["perf_unhalted_core_cycles", "perf_unhalted
     return df
 
 class EndpointModel:
-    def __init__(self, tasks, static_power, energy_consumed, alpha=0.9):
+    def __init__(self, tasks, static_power, energy_consumed, perf_counters, alpha=0.9):
         self.tasks = tasks
         self.static_power = static_power
         self.energy_consumed = energy_consumed
         self.alpha = alpha
+        self.perf_counters = perf_counters
 
         self.regressions = {}
 
     def train(self, tasks, resources, energy, caws_df):
-        resources = resources.dropna(subset=["perf_unhalted_core_cycles", "perf_unhalted_reference_cycles", "perf_llc_misses", "perf_instructions_retired"])
+        resources = resources.dropna(subset=self.perf_counters)
 
         energy["timestamp"] = pd.to_datetime(energy['timestamp'])
         energy["power"] = energy["total_energy"] / energy["duration"]
@@ -84,8 +85,8 @@ class EndpointModel:
             df_combined.replace([np.inf, -np.inf], np.nan, inplace=True)
             df_combined = df_combined.dropna()
             regr = ElasticNet(random_state=0, positive=True)
-            regr.fit(df_combined[["perf_instructions_retired", "perf_llc_misses", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"]].values, df_combined["power"])
-            df_combined["pred_power"] = regr.predict(df_combined[["perf_instructions_retired", "perf_llc_misses", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"]].values)
+            regr.fit(df_combined[self.perf_counters].values, df_combined["power"])
+            df_combined["pred_power"] = regr.predict(df_combined[self.perf_counters].values)
 
             if self.static_power is None:
                 self.static_power = regr.intercept_
@@ -96,7 +97,7 @@ class EndpointModel:
                 worker_df = df_split_clean[block_id][i]
                 pid = worker_df["pid"].iloc[0]
                 worker_df = pd.merge_asof(energy[energy["block_id"] == block_id], worker_df, on="timestamp", direction="backward").dropna()
-                worker_df["pred_power"] = regr.predict(worker_df[["perf_instructions_retired", "perf_llc_misses", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"]]) - regr.intercept_
+                worker_df["pred_power"] = regr.predict(worker_df[self.perf_counters]) - regr.intercept_
 
                 worker_df = pd.merge_ordered(
                     worker_df, tasks.loc[(tasks["pid"]==pid) & (tasks["block_id"]==block_id), "task_try_time_running"].rename("timestamp"),
@@ -243,7 +244,7 @@ class Predictor:
             tasks =  func_to_tasks[func_to_tasks["endpoint_id"] == endpoint.compute_endpoint_id]
             static_power = endpoint_df.loc[endpoint.compute_endpoint_id]["static_power"]
             energy_consumed = endpoint_df.loc[endpoint.compute_endpoint_id]["energy_consumed"]
-            self.endpoint_models[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed)
+            self.endpoint_models[endpoint.name] = EndpointModel(tasks, static_power, energy_consumed, endpoint.perf_counters)
     
     def create_embedding_table(self, func_to_tasks, n_examples=10):
         func_to_tasks = func_to_tasks.sort_values("feature_id")
