@@ -277,12 +277,15 @@ def sensitivity(config,
     for alpha in alphas:
         strategy = ClusterMHRA(endpoints, predictor, alpha=alpha)
         results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
-        results["strategy"] = "round_robin"
+        results["strategy"] = "cluster_mhra"
         results["alpha"] = alpha
         results["ntasks"] = ntasks
         with open(result_path, "a") as fp:
             fp.write(json.dumps(results))
             fp.write("\n")
+
+        print("Rate limiting to ensure endpoints are cold.")
+        time.sleep(60)
 
 if __name__ == "__main__":
     cli()
