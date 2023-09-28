@@ -1,9 +1,3 @@
-{"runtime": 76.247781, "energy": 3259646623.0, "strategy": "mhra", "alpha": 0.5, "ntasks": 16}
-{"runtime": 56.422633, "energy": 2735403764.0, "strategy": "cluster_mhra", "alpha": 0.5, "ntasks": 16}
-{"runtime": 222.522695, "energy": 33434901486.0, "strategy": "round_robin", "alpha": null, "ntasks": 16}
-{"runtime": 52.843322, "energy": 2580481431.0, "strategy": "desktop", "alpha": null, "ntasks": 16}
-{"runtime": 240.938808, "energy": 25053000000.0, "strategy": "theta", "alpha": null, "ntasks": 16}
-{"runtime": 36.781635, "energy": 9444026299.0, "strategy": "midway", "alpha": null, "ntasks": 16}
 {"runtime": 447.848011, "energy": 42523440059.0, "strategy": "cluster_mhra", "alpha": 0.5, "ntasks": 256}
 {"runtime": 323.059683, "energy": 90631397241.0, "strategy": "round_robin", "alpha": null, "ntasks": 256}
 {"runtime": 640.486623, "energy": 33461179354.0, "strategy": "desktop", "alpha": null, "ntasks": 256}
