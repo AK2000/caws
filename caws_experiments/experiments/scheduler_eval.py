@@ -127,7 +127,7 @@ def compare(config,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matmul"]
+        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video"]
     benchmark_names = [b for b in benchmark_names if b not in exclude]
     benchmarks = []
     for benchmark_name in benchmark_names:
@@ -153,6 +153,7 @@ def compare(config,
 
     print("Rate limiting so endpoints are cold")
     time.sleep(60)
+
 
     print(f"Testing ClusterMHRA Strategy")
     strategy = ClusterMHRA(endpoints, predictor, alpha=0.5)
@@ -257,7 +258,7 @@ def sensitivity(config,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matmul"]
+        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video"]
     benchmark_names = [b for b in benchmark_names if b not in exclude]
     benchmarks = []
     for benchmark_name in benchmark_names:
