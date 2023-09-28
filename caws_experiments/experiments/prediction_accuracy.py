@@ -174,7 +174,7 @@ def feature_prediction_accuracy(config,
     # Hacky way of removing historical data to see what prediction would look like
     predictor.start()
     for endpoint_model in predictor.endpoint_models.values():
-        endpoint_model.tasks.drop(df.index, inplace=True)
+        endpoint_model.tasks.drop(endpoint_model.tasks.index, inplace=True)
 
     create_data_history(endpoints, src_endpoint, data_dir, benchmark_names, train_sizes, monitoring_url, ntasks)
 
