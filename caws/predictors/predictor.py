@@ -162,7 +162,14 @@ class EndpointModel:
             data_matrix = data_matrix[:, ~pd.isnull(data_matrix).any(axis=0)]
             y_matrix = func_tasks[["running_duration", "avg_power"]].to_numpy()
             w0, _ = nnls(data_matrix.astype(np.float64),  y_matrix[:, 0])
-            w1, _ = nnls(data_matrix.astype(np.float64),  y_matrix[:, 1])
+            
+            data_matrix = data_matrix[y_matrix[:, 1] > 0, :]
+            y_matrix = y_matrix[y_matrix[:, 1] > 0, :]
+            if len(y_matrix) == 0:
+                w1 = np.zeros_like(w0)
+            else:
+                w1, _ = nnls(data_matrix.astype(np.float64),  y_matrix[:, 1])
+                
             w = np.stack([w0, w1], axis=1)
 
             self.regressions[(func_name, categorical_features)] = w

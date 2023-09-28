@@ -19,7 +19,7 @@ from caws.predictors.predictor import Predictor
 from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
 
-def create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_names, sizes, monitoring_url, ntasks):
+def create_data_history(endpoints, src_endpoint, data_dir, benchmark_names, sizes, monitoring_url, ntasks):
     print("Colecting Data")
 
     benchmarks = []
@@ -29,30 +29,27 @@ def create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_
         benchmark.func.mainify()
         for size in sizes:
             args, kwargs = benchmark.generate_inputs(src_endpoint, size, data_dir=data_dir)
-            benchmarks.append((benchmark.func, size, args, kwargs))
+            benchmarks.append((benchmark.func, args, kwargs))
 
     strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
     with caws.CawsExecutor(endpoints, 
                            strategy,
-                           caws_database_url=monitoring_url,
-                           predictor=predictor) as executor:
+                           caws_database_url=monitoring_url) as executor:
 
         print("Warming up endpoint!")
-        futures = []
-        for _ in range(len(endpoints)):
-            futures.append(executor.submit(time.sleep, 5))
-        concurrent.futures.wait(futures)
+        fut = executor.submit(time.sleep, 5)
+        fut.result()
 
         futures = []
-        for i, (func, size, args, kwargs) in tqdm(enumerate(benchmarks)):
+        for i, (func, args, kwargs) in tqdm(enumerate(benchmarks)):
             # Ensure all tasks are batched together
             with executor.scheduling_lock:
-                for _ in range(ntasks * len(endpoints)):
+                for _ in range(ntasks):
                     futures.append(executor.submit(func, *args, **kwargs))
             
-        concurrent.futures.wait(futures)
-        for future in futures:
-            future.result() # Raise any exceptions
+        with tqdm(total=len(futures)) as pbar:
+            for future in concurrent.futures.as_completed(futures):
+                pbar.update(1)
 
     print("Completed!")
 
@@ -122,9 +119,8 @@ def cli():
     help="Location of experiment config.",
 )
 @click.option(
-    "--endpoints", "-l",
+    "--endpoint_name", "-l",
     required=False,
-    multiple=True,
     help="Endpoint to use. Default (all)"
 )
 @click.option(
@@ -151,7 +147,7 @@ def cli():
     help="Place to store results file"
 )
 def feature_prediction_accuracy(config,
-                                endpoints,
+                                endpoint_name,
                                 data_dir,
                                 ntasks,
                                 exclude,
@@ -163,22 +159,27 @@ def feature_prediction_accuracy(config,
     train_sizes = ["1", "3", "4"]
     pred_sizes = ["2", "5"]
 
-    endpoint_names = endpoints if len(endpoints) > 0 else config_obj["endpoints"].keys()
     endpoints = []
-    src_endpoint = None
-    for endpoint_name in endpoint_names:
-        endpoint = utils.load_endpoint(config_obj, endpoint_name)
-        endpoints.append(endpoint)
-        if endpoint_name == config_obj["host"]:
-            src_endpoint = endpoint
+    endpoint = utils.load_endpoint(config_obj, endpoint_name)
+    endpoints.append(endpoint)
 
-    if src_endpoint is None:
+    if endpoint_name == config_obj["host"]:
+        src_endpoint = endpoint
+    else:
         src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     
     
     monitoring_url = config_obj["caws_monitoring_db"]
     predictor = Predictor(endpoints, monitoring_url)
-    create_data_history(predictor, endpoints, src_endpoint, data_dir, benchmark_names, train_sizes, monitoring_url, ntasks)
+    # Hacky way of removing historical data to see what prediction would look like
+    predictor.start()
+    for endpoint_model in predictor.endpoint_models.values():
+        endpoint_model.tasks.drop(df.index, inplace=True)
+
+    create_data_history(endpoints, src_endpoint, data_dir, benchmark_names, train_sizes, monitoring_url, ntasks)
+
+    print("Updating predictor")
+    predictor.update()
     
     measurements = []
     for endpoint in endpoints:
