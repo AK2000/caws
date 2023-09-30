@@ -5,6 +5,7 @@ import time
 from tqdm import tqdm
 from collections import defaultdict
 import datetime
+import uuid
 
 import sqlalchemy
 from sqlalchemy import text, bindparam
@@ -13,7 +14,8 @@ import click
 import numpy as np
 
 import caws
-from caws.task import CawsTaskInfo
+from caws.task import CawsTask, CawsTaskInfo
+from caws.path import CawsPath
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.strategy.mhra import MHRA
 from caws.strategy.cluster_mhra import ClusterMHRA
@@ -24,7 +26,7 @@ from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
 
 
-def create_task_info(func, *args, ** kwargs):
+def create_task_info(fn, *args, ** kwargs):
     if isinstance(fn, CawsTask):
         features = fn.extract_features(*args, **kwargs)
         fn = fn.extract_func()
@@ -83,10 +85,12 @@ def cli():
 @click.option(
     "--result_path", "-r",
     type=str,
-    default="scheduler_eval.jsonl",
+    default="scheduler_overhead.jsonl",
     help="Place to store results file"
 )
 def scheduler_overhead(config, endpoints, data_dir, max_tasks, exclude, result_path):
+    config_obj = json.load(open(config, "r"))
+
     endpoint_names = endpoints if len(endpoints) > 0 else config_obj["endpoints"].keys()
     endpoints = []
     src_endpoint = None
@@ -126,14 +130,19 @@ def scheduler_overhead(config, endpoints, data_dir, max_tasks, exclude, result_p
             for _ in range(ntasks):
                 tasks.append(create_task_info(func, *args, **kwargs))
         
-        for name, strategy in startegies.items():
+        print(f"Starting timing strategies with {len(tasks)} tasks")
+
+        for name, strategy in tqdm(startegies.items()):
             start = time.time()
             strategy.schedule(tasks)
             runtime = time.time() - start
 
-        with open(result_path, "a") as fp:
-            fp.write(json.dumps({"strategy": name, "ntasks": len(tasks), "runtime", runtime}))
-            fp.write("\n")  
+            with open(result_path, "a") as fp:
+                fp.write(json.dumps({"strategy": name, "ntasks": len(tasks), "runtime": runtime}))
+                fp.write("\n")
+
+        print("Completed one round")
+    print("Completed test!")
     
 
 
