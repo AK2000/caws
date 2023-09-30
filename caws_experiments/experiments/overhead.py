@@ -25,6 +25,7 @@ from caws.predictors.predictor import Predictor
 from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
 
+from globus_compute_sdk import Executor
 
 def create_task_info(fn, *args, ** kwargs):
     if isinstance(fn, CawsTask):
@@ -47,6 +48,26 @@ def create_task_info(fn, *args, ** kwargs):
             task_info.transfer_files[arg.endpoint.transfer_endpoint_id] += arg.num_files
     
     return task_info
+
+
+def matmul(dim: int):
+    import numpy as np
+    import time
+
+    start = time.now()
+
+    A = np.random.rand(dim, dim)
+    B = np.random.rand(dim, dim)
+
+    runtime = time.now() - start
+    return runtime
+
+def no_op():
+    return None
+
+def hello_world():
+    return "Hello World"
+
 
 @click.group()
 def cli():
@@ -145,6 +166,74 @@ def scheduler_overhead(config, endpoints, data_dir, max_tasks, exclude, result_p
     print("Completed test!")
     
 
+@cli.command()
+@click.option(
+    "--monitoring_id",
+    required=True,
+    type=str,
+    help="Compute ID with FuncX ID",
+)
+@click.option(
+    "--baseline_id",
+    required=True,
+    type=str,
+    help="Compute ID with FuncX ID",
+)
+@click.option(
+    "--ntasks", "-n",
+    type=int,
+    default=1,
+    help="Number of each benchmark to include in the mix",
+)
+def scheduler_overhead(monitoring_id, baseline_id, ntasks):
+    endpoints = {"monitoring": monitoring_id, "baseline": baseline_id}
+
+    for name, compute_id in endpoints.items():
+        with Executor(endpoint_id=endpoint_id) as gce:
+            future = gce.submit(time.sleep, 5) # Warm Up
+            future.result()
+
+            times = []
+            for _ in range(ntasks):
+                start = time.now()
+                future = gce.submit(no_op)
+                future.result()
+                runtime = time.now() - start
+                times.append(runtime)
+            latency_1 = sum(times)/len(times)
+
+            times = []
+            for _ in range(ntasks):
+                start = time.now()
+                futures = []
+                for i in range(512):
+                    futures.append(gce.submit(hello_world))
+                concurrent.futures.wait(futures)
+                runtime = time.now() - start
+                times.append(runtime)
+            latency_2 = sum(times)/len(times)
+
+            rtts = []
+            runtimes = []
+            for _ in range(ntasks):
+                start = time.now()
+                futures = []
+                for i in range(64):
+                    futures.append(gce.submit(matmul))
+                concurrent.futures.wait(futures)
+                rtt = time.now() - start
+                times.append(rtt)
+
+                for fut in futures:
+                    runtimes.append(fut.result())
+                
+            latency_3 = sum(rtts)/len(rtt)  
+            avg_runtime = sum(runtimes) / len(runtimes)
+
+            print("Endpoint": name)
+            print("No op tasks:", latency_1)
+            print("Hello World:", latency_2)
+            print("Matmul:", latency_3, avg_runtime)
 
 if __name__ == "__main__":
     cli()
