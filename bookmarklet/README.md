@@ -6,6 +6,8 @@ will inject HTML code into the
 [Globus web app's Compute page](https://app.globus.org/compute) to display
 energy expenditure information.
 
+![bookmarklet](figures/bookmarklet.png)
+
 ## How to use
 
 Create a bookmark of any name with the content of
