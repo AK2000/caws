@@ -54,12 +54,12 @@ def matmul(dim: int):
     import numpy as np
     import time
 
-    start = time.now()
+    start = time.time()
 
     A = np.random.rand(dim, dim)
     B = np.random.rand(dim, dim)
 
-    runtime = time.now() - start
+    runtime = time.time() - start
     return runtime
 
 def no_op():
@@ -67,6 +67,11 @@ def no_op():
 
 def hello_world():
     return "Hello World"
+
+def sleep():
+    import time
+    time.sleep(5)
+    return
 
 
 @click.group()
@@ -185,55 +190,63 @@ def scheduler_overhead(config, endpoints, data_dir, max_tasks, exclude, result_p
     default=1,
     help="Number of each benchmark to include in the mix",
 )
-def scheduler_overhead(monitoring_id, baseline_id, ntasks):
+def monitoring_overhead(monitoring_id, baseline_id, ntasks):
     endpoints = {"monitoring": monitoring_id, "baseline": baseline_id}
 
     for name, compute_id in endpoints.items():
-        with Executor(endpoint_id=endpoint_id) as gce:
-            future = gce.submit(time.sleep, 5) # Warm Up
+        with Executor(endpoint_id=compute_id) as gce:
+
+            print("Warming up endpoint!")
+
+            future = gce.submit(sleep) # Warm Up
             future.result()
 
+            print("Starting first test")
             times = []
-            for _ in range(ntasks):
-                start = time.now()
+            for _ in tqdm(range(ntasks)):
+                start = time.time()
                 future = gce.submit(no_op)
                 future.result()
-                runtime = time.now() - start
+                runtime = time.time() - start
                 times.append(runtime)
             latency_1 = sum(times)/len(times)
 
+            print("Starting second task")
             times = []
-            for _ in range(ntasks):
-                start = time.now()
+            for _ in tqdm(range(ntasks)):
+                start = time.time()
                 futures = []
                 for i in range(512):
                     futures.append(gce.submit(hello_world))
                 concurrent.futures.wait(futures)
-                runtime = time.now() - start
+                runtime = time.time() - start
                 times.append(runtime)
             latency_2 = sum(times)/len(times)
 
+            print("Starting third task")
             rtts = []
             runtimes = []
-            for _ in range(ntasks):
-                start = time.now()
+            for _ in tqdm(range(ntasks)):
+                start = time.time()
                 futures = []
                 for i in range(64):
-                    futures.append(gce.submit(matmul))
+                    futures.append(gce.submit(matmul, 256))
                 concurrent.futures.wait(futures)
-                rtt = time.now() - start
-                times.append(rtt)
+                rtt = time.time() - start
+                rtts.append(rtt)
 
                 for fut in futures:
                     runtimes.append(fut.result())
                 
-            latency_3 = sum(rtts)/len(rtt)  
+            latency_3 = sum(rtts)/len(rtts)  
             avg_runtime = sum(runtimes) / len(runtimes)
 
-            print("Endpoint": name)
+            print("Endpoint", name)
             print("No op tasks:", latency_1)
             print("Hello World:", latency_2)
             print("Matmul:", latency_3, avg_runtime)
+
+            time.sleep(60)
 
 if __name__ == "__main__":
     cli()
