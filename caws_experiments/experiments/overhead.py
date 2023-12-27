@@ -133,8 +133,8 @@ def scheduler_overhead(config, endpoints, data_dir, max_tasks, exclude, result_p
     predictor = Predictor(endpoints, monitoring_url)
     tp = TransferPredictor(endpoints)
     startegies = {
-        "mhra": MHRA(endpoints, predictor, alpha=0.5), 
-        "cluster_mhra": ClusterMHRA(endpoints, predictor, alpha=0.5),
+        "mhra": MHRA(endpoints, predictor, alpha=0.2), 
+        "cluster_mhra": ClusterMHRA(endpoints, predictor, alpha=0.2),
         "round_robin": FCFS_RoundRobin(endpoints, tp)
     }
 
@@ -209,7 +209,8 @@ def monitoring_overhead(monitoring_id, baseline_id, ntasks):
                 future.result()
                 runtime = time.time() - start
                 times.append(runtime)
-            latency_1 = sum(times)/len(times)
+            times = pd.Series(times)
+            print(times.describe())
 
             print("Starting second task")
             times = []
@@ -221,7 +222,8 @@ def monitoring_overhead(monitoring_id, baseline_id, ntasks):
                 concurrent.futures.wait(futures)
                 runtime = time.time() - start
                 times.append(runtime)
-            latency_2 = sum(times)/len(times)
+            times = pd.Series(times)
+            print(times.describe())
 
             print("Starting third task")
             rtts = []
@@ -237,16 +239,12 @@ def monitoring_overhead(monitoring_id, baseline_id, ntasks):
 
                 for fut in futures:
                     runtimes.append(fut.result())
-                
-            latency_3 = sum(rtts)/len(rtts)  
-            avg_runtime = sum(runtimes) / len(runtimes)
 
-            print("Endpoint", name)
-            print("No op tasks:", latency_1)
-            print("Hello World:", latency_2)
-            print("Matmul:", latency_3, avg_runtime)
+            print(pd.Series(rtt).describe())
+            print(pd.Series(runtimes).describe())
 
             time.sleep(60)
+
 
 if __name__ == "__main__":
     cli()

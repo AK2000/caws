@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 import json
 import time
+import functools
 
 import numpy as np
 import numpy.linalg
@@ -134,7 +135,8 @@ class EndpointModel:
         self.tasks = pd.concat([self.tasks, tasks])
         self.regressions = {}
         return tasks, self.static_power, self.energy_consumed
-
+    
+    @functools.cache
     def predict_func(self, func_name, features):
         categorical_features = tuple([v for v, t in features if t == CawsFeatureType.CATEGORICAL])
         continuous_features = [v for v, t in features if t == CawsFeatureType.CONTINUOUS]
@@ -307,8 +309,9 @@ class Predictor:
 
     def predict_execution(self, endpoint, task):
         # TODO: Figure out how to implement impute for missing values
-        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, task.features)
+        pred = self.endpoint_models[endpoint.name].predict_func(task.function_name, tuple(task.features))
         if pred.runtime is None or pred.energy is None:
+            raise NotImplementedError(f"Could not generate prediction for ({endpoint.name}, {task.function_name})")
             if self.embedding_matrix is None:
                 with self.Session() as session:
                     connection = session.connection()

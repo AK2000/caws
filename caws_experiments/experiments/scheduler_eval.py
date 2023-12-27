@@ -151,6 +151,7 @@ def compare(config,
         fp.write(json.dumps(results))
         fp.write("\n")
 
+    quit()
     print("Rate limiting so endpoints are cold")
     time.sleep(60)
 

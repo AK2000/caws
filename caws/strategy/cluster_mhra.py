@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+from tqdm import tqdm
 import numpy as np
 from sklearn.cluster import ward_tree
 
@@ -147,7 +148,7 @@ class ClusterMHRA(Strategy):
         task_runtimes = []
         task_energies = []
         task_preds = defaultdict(dict)
-        for i, task in enumerate(tasks):
+        for i, task in tqdm(enumerate(tasks)):
             for j, endpoint in enumerate(self.endpoints):
                 task_runtime, task_energy = self.predictor.predict_execution(endpoint, task)
                 task_embeddings[i, 2*j] = task_runtime
@@ -173,7 +174,7 @@ class ClusterMHRA(Strategy):
 
     def cluster(self, tasks_by_energy, task_embeddings, threshold=None):
         if threshold is None:
-            threshold = max([self.predictor.predict_static_power(e) * e.shutdown_time for e in self.endpoints])
+            threshold = 0.25 * max([self.predictor.predict_static_power(e) * e.shutdown_time for e in self.endpoints])
         print(f"Threshold: {threshold}")
 
         task_embeddings += np.random.uniform(-1, 1, size=task_embeddings.shape)
@@ -207,7 +208,6 @@ class ClusterMHRA(Strategy):
             pred = self.predictor.predict_transfer(*pair, size, files)
             total_runtime = max(total_runtime, pred.runtime)
             total_energy += pred.energy
-
         return total_runtime, total_energy
 
     def schedule(self, tasks):
@@ -295,8 +295,9 @@ class ClusterMHRA(Strategy):
             makespan_energy += transfer_energy
             cost = self.objective(makespan_runtime, makespan_energy)
             print(f"\t{makespan_runtime} s")
-            print(f"\t{makespan_energy} J")
+            print(f"\t{makespan_energy/1e9} kJ")
             print(f"\tCost: {cost}")
+            print(f"\tTransfer Energy: {transfer_energy/1e9} kJ")
 
             if cur_cost < best_cost:
                 best_schedule = cur_schedule
@@ -306,7 +307,7 @@ class ClusterMHRA(Strategy):
 
         print(f"After scheduling, tasks would take: ")
         print(f"\t{best_runtime} s")
-        print(f"\t{best_energy} J")
+        print(f"\t{best_energy/1e9} kJ")
 
         endpoint_count = defaultdict(int)
         for task, endpoint in best_schedule:
