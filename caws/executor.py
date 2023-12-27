@@ -17,7 +17,6 @@ from caws.transfer import TransferManager, TransferException
 from caws.strategy.base import Strategy
 from caws.task import CawsTaskInfo, TaskStatus, CawsFuture, CawsTask
 from caws.endpoint import Endpoint, EndpointState
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
 from caws.path import CawsPath
 

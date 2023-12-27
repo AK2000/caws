@@ -16,12 +16,50 @@ import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.strategy.mhra import MHRA
 from caws.strategy.cluster_mhra import ClusterMHRA
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.predictors.predictor import Predictor
 
 from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
 
+def create_task_info(fn, *args, ** kwargs):
+    if isinstance(fn, CawsTask):
+        features = fn.extract_features(*args, **kwargs)
+        fn = fn.extract_func()
+    else:
+        features = []
+
+    task_id = str(uuid.uuid4())
+    name = kwargs.get("name", f"{fn.__module__}.{fn.__qualname__}")
+    task_info = CawsTaskInfo(fn, list(args), kwargs, task_id, name, features=features)
+    for i, arg in enumerate(task_info.task_args):
+        if isinstance(arg, CawsPath):
+            task_info.transfer_size[arg.endpoint.transfer_endpoint_id] += arg.size
+            task_info.transfer_files[arg.endpoint.transfer_endpoint_id] += arg.num_files
+
+    for key, arg in task_info.task_kwargs.items():
+        if isinstance(arg, CawsPath):
+            task_info.transfer_size[arg.endpoint.transfer_endpoint_id] += arg.size
+            task_info.transfer_files[arg.endpoint.transfer_endpoint_id] += arg.num_files
+    
+    return task_info
+
+def shadow_run(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url):
+    tasks = []
+    for func, args, kwargs in benchmarks:
+        for _ in range(ntasks):
+            tasks.append(create_task_info(func, *args, **kwargs))
+    
+    print(f"Starting timing strategies with {len(tasks)} tasks")
+    start = time.time()
+    schedule = strategy.schedule(tasks)
+    total_time = time.time() - start
+
+    transfer_time, transfer_energy = strategy.calculate_transfer(schedule)
+
+    return {
+        "scheduler_overhead": total_time,
+        "pred_transfer_energy": transfer_energy
+    }
 
 def run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url):
 
@@ -98,6 +136,11 @@ def cli():
     help="Benchmarks to include."
 )
 @click.option(
+    "--mock", "-m", 
+    is_flag=True, 
+    help="Run the scheduler without executing tasks"
+)
+@click.option(
     "--result_path", "-r",
     type=str,
     default="scheduler_eval.jsonl",
@@ -109,6 +152,7 @@ def compare(config,
         ntasks,
         exclude,
         include,
+        mock,
         result_path):
 
     config_obj = json.load(open(config, "r"))
@@ -139,7 +183,9 @@ def compare(config,
         
     monitoring_url = config_obj["caws_monitoring_db"]
     predictor = Predictor(endpoints, monitoring_url)
-    tp = TransferPredictor(endpoints)
+
+    if mock:
+        run_one = shadow_run
     
     print(f"Testing MHRA Strategy")
     strategy = MHRA(endpoints, predictor, alpha=0.5)
@@ -151,7 +197,6 @@ def compare(config,
         fp.write(json.dumps(results))
         fp.write("\n")
 
-    quit()
     print("Rate limiting so endpoints are cold")
     time.sleep(60)
 
@@ -170,7 +215,7 @@ def compare(config,
     time.sleep(60)
 
     print(f"Running tasks in a round robin fashion")
-    strategy = FCFS_RoundRobin(endpoints, tp)
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
     results["strategy"] = "round_robin"
     results["alpha"] = None
@@ -184,7 +229,7 @@ def compare(config,
     
     for endpoint in endpoints:
         print(f"Submitting all tasks to endpoint {endpoint.name}")
-        strategy = FCFS_RoundRobin([endpoint,], tp)
+        strategy = FCFS_RoundRobin([endpoint,], predictor)
         results = run_one([endpoint,], strategy, predictor, benchmarks, ntasks, monitoring_url)
         results["strategy"] = endpoint.name
         results["alpha"] = None
@@ -271,7 +316,6 @@ def sensitivity(config,
         
     monitoring_url = config_obj["caws_monitoring_db"]
     predictor = Predictor(endpoints, monitoring_url)
-    tp = TransferPredictor(endpoints)
 
     alphas = [1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0]
 

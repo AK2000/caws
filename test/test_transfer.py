@@ -4,7 +4,7 @@ import os
 
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
+from caws.predictors.predictor import Predictor
 from caws.transfer import TransferManager, TransferStatus
 from caws.path import CawsPath
 
@@ -91,7 +91,7 @@ def test_transfer_executor():
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
     caws_path = CawsPath(source, file_path)
     endpoints = [destination, source]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoints, "sqlite:///caws_monitoring.db"))
     with caws.CawsExecutor(endpoints, strategy) as executor:
         fut = executor.submit(transfer_file, caws_path)
         assert fut.result()

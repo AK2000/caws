@@ -5,8 +5,8 @@ class FCFS_RoundRobin(Strategy):
     come first serve manner, distributes tasks  in a round-robin fashion across endpoints
     """
 
-    def __init__(self, endpoints, transfer_predictor):
-        super().__init__(endpoints, transfer_predictor)
+    def __init__(self, endpoints, predictor):
+        super().__init__(endpoints, predictor)
         self.cur_idx = 0
         self.endpoints_list = endpoints
         self.n = len(self.endpoints_list)

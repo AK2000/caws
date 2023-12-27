@@ -19,7 +19,6 @@ from caws.path import CawsPath
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.strategy.mhra import MHRA
 from caws.strategy.cluster_mhra import ClusterMHRA
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.predictors.predictor import Predictor
 
 from caws_experiments.benchmarks import utils as benchmark_utils
@@ -131,11 +130,10 @@ def scheduler_overhead(config, endpoints, data_dir, max_tasks, exclude, result_p
 
     monitoring_url = config_obj["caws_monitoring_db"]
     predictor = Predictor(endpoints, monitoring_url)
-    tp = TransferPredictor(endpoints)
     startegies = {
         "mhra": MHRA(endpoints, predictor, alpha=0.2), 
         "cluster_mhra": ClusterMHRA(endpoints, predictor, alpha=0.2),
-        "round_robin": FCFS_RoundRobin(endpoints, tp)
+        "round_robin": FCFS_RoundRobin(endpoints, predictor)
     }
 
     benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matmul"]

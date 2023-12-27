@@ -9,7 +9,6 @@ import numpy as np
 
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.predictors.predictor import Predictor
 
 from caws_experiments.benchmarks import utils as benchmark_utils
@@ -72,7 +71,7 @@ def benchmark(benchmark_name,
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
     predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     with caws.CawsExecutor(endpoints,
                            strategy,
                            caws_database_url=config_obj["caws_monitoring_db"],
@@ -164,7 +163,7 @@ def profile(endpoint_name,
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
     predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     with caws.CawsExecutor(endpoints, 
                            strategy,
                            caws_database_url=config_obj["caws_monitoring_db"],

@@ -194,22 +194,6 @@ class ClusterMHRA(Strategy):
 
         return [tuple(tasks) for _, tasks in clusters.values()]
     
-    def calculate_transfer(self, schedule):
-        aggregate_transfer_size = defaultdict(int)
-        aggregate_transfer_files = defaultdict(int)
-        for task, dst_endpoint in schedule:
-            for src_endpoint_id in task.transfer_size.keys():
-                aggregate_transfer_size[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_size[src_endpoint_id]
-                aggregate_transfer_files[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_files[src_endpoint_id]
-
-        total_runtime = 0
-        total_energy = 0
-        for (pair, size), files in zip(aggregate_transfer_size.items(), aggregate_transfer_files.values()):
-            pred = self.predictor.predict_transfer(*pair, size, files)
-            total_runtime = max(total_runtime, pred.runtime)
-            total_energy += pred.energy
-        return total_runtime, total_energy
-
     def schedule(self, tasks):
         tasks_by_runtime, tasks_by_energy, task_embeddings, task_preds = self.preprocess(tasks)
         tasks = longest_processing_time(tasks_by_runtime, tasks_by_energy)

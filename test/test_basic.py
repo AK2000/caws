@@ -3,7 +3,7 @@ import time
 
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
+from caws.predictors.predictor import Predictor
 
 from util_funcs import * # Imports test functions
 
@@ -14,7 +14,7 @@ def test_one(endpoint_id):
                              monitoring_avail=True)
 
     endpoints = [endpoint]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoitns, "sqlite:///caws_tasks.db"))
     with caws.CawsExecutor(endpoints, strategy) as executor:
         fut = executor.submit(add, 1, 2)
         assert fut.result() == 3
@@ -28,7 +28,7 @@ def test_multi(endpoint_id):
             monitoring_avail=True,
         ),
     ]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoitns, "sqlite:///caws_tasks.db"))
 
     with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_tasks.db") as executor:
         # Submit all tasks

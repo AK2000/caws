@@ -13,7 +13,6 @@ import numpy as np
 
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.predictors.predictor import Predictor
 
 from caws_experiments.benchmarks import utils as benchmark_utils
@@ -31,7 +30,8 @@ def create_data_history(endpoints, src_endpoint, data_dir, benchmark_names, size
             args, kwargs = benchmark.generate_inputs(src_endpoint, size, data_dir=data_dir)
             benchmarks.append((benchmark.func, args, kwargs))
 
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    predictor = Predictor(endpoints, monitoring_url)
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     with caws.CawsExecutor(endpoints, 
                            strategy,
                            caws_database_url=monitoring_url) as executor:
@@ -64,7 +64,8 @@ def measure_accuracy(predictor, endpoints, src_endpoint, data_dir, benchmark_nam
         args, kwargs = benchmark.generate_inputs(src_endpoint, input_size, data_dir=data_dir)
         benchmarks.append((benchmark.func, args, kwargs))
 
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    predictor = Predictor(endpoints, monitoring_url)
+    strategy = FCFS_RoundRobin(endpoints, predictor)
 
     predictions_by_benchmark = dict()
     task_ids = []

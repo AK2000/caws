@@ -4,7 +4,7 @@ import copy
 from abc import ABC
 
 from caws import Endpoint, CawsTaskInfo
-from caws.predictors.transfer_predictors import TransferPredictor
+from caws.predictors.predictors import Predictor
 
 class Strategy(ABC):
     """ Strategy interface to provide scheduling decisions
@@ -22,14 +22,13 @@ class Strategy(ABC):
         periodically updated by the executor
     """
 
-    def __init__(self, endpoints: List[Endpoint], transfer_predictor: TransferPredictor):
+    def __init__(self, endpoints: List[Endpoint], predictor: Predictor):
         
         if len(endpoints) == 0:
             raise ValueError("List of endpoints cannot be empty")
-        assert(callable(transfer_predictor))
 
         self.endpoints = {e.name: e for e in endpoints}
-        self.transfer_predictor = transfer_predictor
+        self.predictor = predictor
 
     def schedule(self, tasks: CawsTaskInfo) -> (Tuple, List[CawsTaskInfo]):
         """ Map tasks to endpoints, with the assumption that the endpoint will
@@ -66,8 +65,25 @@ class Strategy(ABC):
     def update(self, task_info):
         raise NotImplementedError
 
+    def calculate_transfer(self, schedule):
+        aggregate_transfer_size = defaultdict(int)
+        aggregate_transfer_files = defaultdict(int)
+        for task, dst_endpoint in schedule:
+            for src_endpoint_id in task.transfer_size.keys():
+                aggregate_transfer_size[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_size[src_endpoint_id]
+                aggregate_transfer_files[(src_endpoint_id, dst_endpoint.transfer_endpoint_id)] += task.transfer_files[src_endpoint_id]
+
+        total_runtime = 0
+        total_energy = 0
+        for (pair, size), files in zip(aggregate_transfer_size.items(), aggregate_transfer_files.values()):
+            pred = self.predictor.predict_transfer(*pair, size, files)
+            total_runtime = max(total_runtime, pred.runtime)
+            total_energy += pred.energy
+            
+        return total_runtime, total_energy
+
     def __str__(self):
-        return type(self).__name__
+        return type(self).__name_
 
 class Schedule:
     endpoint_to_task: dict[str, List]
