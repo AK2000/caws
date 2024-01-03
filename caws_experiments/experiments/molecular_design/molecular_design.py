@@ -17,7 +17,7 @@ from caws.task import caws_task
 from caws.features import ArgLenFeature
 
 from caws_experiments import utils
-from caws_experiments.benchmarks.molecular_design.chemfunctions import compute_vertical, MorganFingerprintTransformer
+from chemfunctions import compute_vertical
 
 from globus_compute_sdk import Executor
 
@@ -31,7 +31,7 @@ def train_model(train_data):
         A trained model
     """
     # Imports for python functions run remotely must be defined inside the function
-    from caws_experiments.benchmarks.molecular_design.chemfunctions import MorganFingerprintTransformer
+    from chemfunctions import MorganFingerprintTransformer
     from sklearn.neighbors import KNeighborsRegressor
     from sklearn.pipeline import Pipeline
     
