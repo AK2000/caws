@@ -47,7 +47,6 @@ class EndpointModel:
 
     def train(self, tasks, resources, energy, caws_df):
         resources = resources.dropna(subset=self.perf_counters)
-
         energy["timestamp"] = pd.to_datetime(energy['timestamp'])
         energy["power"] = energy["total_energy"] / energy["duration"]
         energy = energy.sort_values("timestamp", ignore_index=True)
@@ -77,10 +76,13 @@ class EndpointModel:
 
         process_preds = {}
         for block_id in df_split_clean.keys():
-            df_split_clean[block_id] = sorted(df_split_clean[block_id], key=lambda x: x.index[-1] - x.index[0], reverse=True)
+            df_split_clean[block_id] = {k: v for k, v in sorted(df_split_clean[block_id].items(), key=lambda item: item[1].index[-1] - item[1].index[0], reverse=True)}
             df = None 
             for process_df in df_split_clean[block_id].values():
-                df = sum_resources(df, process_df)
+                if df is None:
+                    df = process_df
+                else:
+                    df = sum_resources(df, process_df)
 
             # TODO: Should I combine blocks/runs to create regression?
             df_combined = pd.merge_asof(energy[energy["block_id"] == block_id], df, on="timestamp", direction="backward")
@@ -101,7 +103,6 @@ class EndpointModel:
                     df_split_clean[block_id][ppid] = sum_resources(df_split_clean[block_id][ppid], process_df)
 
             for worker_df in df_split_clean[block_id].values():
-                worker_df = df_split_clean[block_id][i]
                 pid = worker_df["pid"].iloc[0]
                 worker_df = pd.merge_asof(energy[energy["block_id"] == block_id], worker_df, on="timestamp", direction="backward").dropna()
                 worker_df["pred_power"] = regr.predict(worker_df[self.perf_counters]) - regr.intercept_
@@ -227,7 +228,7 @@ class Predictor:
             energy_per_bit = (n_switches * hardware_models["switch"])\
                              + (edge_routers * hardware_models["edge_router"])\
                              + (core_routers * hardware_models["core_router"])
-            self.transfer_energy_models[key] = energy_per_bit
+            self.transfer_energy_models[key] = (energy_per_bit * 8) # Convert bits to bytes
         
         self.embedding_matrix = None
             
@@ -282,6 +283,7 @@ class Predictor:
         for endpoint in self.endpoints:
             prev_query = self.last_update_time.get(endpoint.name, endpoint.start_time)
             tasks, resources, energy = endpoint.collect_monitoring_info(prev_query)
+
             if len(tasks) == 0:
                 continue
 

@@ -163,7 +163,7 @@ class MorganFingerprintTransformer(BaseEstimator, TransformerMixin):
         my_func = partial(compute_morgan_fingerprints,
                           fingerprint_length=self.length,
                           fingerprint_radius=self.radius)
-        fing = _pool.map(my_func, X, chunksize=2048)
+        fing = list(_pool.map(my_func, X, chunksize=2048))
         return np.vstack(fing)
 
 

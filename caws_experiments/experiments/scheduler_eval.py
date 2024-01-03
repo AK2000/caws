@@ -5,6 +5,7 @@ import time
 from tqdm import tqdm
 from collections import defaultdict
 import datetime
+import uuid
 
 import sqlalchemy
 from sqlalchemy import text, bindparam
@@ -17,6 +18,8 @@ from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.strategy.mhra import MHRA
 from caws.strategy.cluster_mhra import ClusterMHRA
 from caws.predictors.predictor import Predictor
+from caws.task import CawsTask, CawsTaskInfo
+from caws.path import CawsPath
 
 from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
@@ -50,8 +53,9 @@ def shadow_run(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_ur
             tasks.append(create_task_info(func, *args, **kwargs))
     
     print(f"Starting timing strategies with {len(tasks)} tasks")
+    predictor.start()
     start = time.time()
-    schedule = strategy.schedule(tasks)
+    schedule, _ = strategy.schedule(tasks)
     total_time = time.time() - start
 
     transfer_time, transfer_energy = strategy.calculate_transfer(schedule)

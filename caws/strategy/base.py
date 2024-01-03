@@ -4,7 +4,7 @@ import copy
 from abc import ABC
 
 from caws import Endpoint, CawsTaskInfo
-from caws.predictors.predictors import Predictor
+from caws.predictors.predictor import Predictor
 
 class Strategy(ABC):
     """ Strategy interface to provide scheduling decisions

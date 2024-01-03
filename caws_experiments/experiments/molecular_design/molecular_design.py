@@ -14,9 +14,12 @@ from caws.strategy.mhra import MHRA
 from caws.strategy.cluster_mhra import ClusterMHRA
 from caws.predictors.predictor import Predictor
 from caws.task import caws_task
-from caws.features import ArgFeature
+from caws.features import ArgLenFeature
 
-from caws_experiments.benchmarks.molecular_design.chemfunctions import compute_vertical
+from caws_experiments import utils
+from caws_experiments.benchmarks.molecular_design.chemfunctions import compute_vertical, MorganFingerprintTransformer
+
+from globus_compute_sdk import Executor
 
 def train_model(train_data):
     """Train a machine learning model using Morgan Fingerprints.
@@ -95,7 +98,7 @@ def cli():
     "--num_examples", "-e",
     type=int,
     default=128,
-    help="Max number of examples to profile training with,
+    help="Max number of examples to profile training with",
 )
 @click.option(
     "--warmup", "-w", 
@@ -154,24 +157,26 @@ def profile(endpoint_name,
         train_data = pd.DataFrame(train_data)
 
         # Profile train synchronously
-        example_range = np.logspace(4, np.log2(num_examples), num=int(np.log2(num_examples))-2, base=2, dtype='int', endpoint=True)
+        example_range = np.logspace(2, np.log2(num_examples), num=int(np.log2(num_examples))-1, base=2, dtype='int', endpoint=True)
+
         for n_examples in example_range:
             examples = train_data.sample(n_examples, replace=True) # Generate examples
-            future = executor.submit(train_model, train_data)
+            #model = train_model(examples)
+            future = executor.submit(train_model, examples)
             model = future.result()
 
         # Profile inference
         chunks = np.array_split(search_space['smiles'], 64)
         inference_futures = []
         with executor.scheduling_lock:
-            for _ in ((num_tasks - 1)//len(chunks)) + 1:
-                inference_futures.extend([executor.submit(run_model, train_future, chunk) for chunk in chunks])
+            for _ in range(0, num_tasks, len(chunks)):
+                inference_futures.extend([executor.submit(run_model, model, chunk) for chunk in chunks])
         concurrent.futures.wait(inference_futures)
 
         # Profile combine inference
         inputs = [f.result() for f in inference_futures[:len(chunks)]]
         with executor.scheduling_lock:
-            combine_futures = [executore.submit(combine_inference, inputs) for _ in num_tasks]
+            combine_futures = [executor.submit(combine_inferences, inputs) for _ in range(num_tasks)]
         concurrent.futures.wait(combine_futures)
 
 
@@ -199,13 +204,13 @@ def profile(endpoint_name,
     "--batch", "-b",
     type=int,
     default=128,
-    help="Number of simulations to run each round,
+    help="Number of simulations to run each round",
 )
 @click.option(
     "--total", "-t",
     type=int,
     default=1024,
-    help="Total molecules to evaluate,
+    help="Total molecules to evaluate",
 )
 @click.option(
     "--endpoints", "-l",
