@@ -37,5 +37,5 @@ def ArgSizeFeature(arg_no = 0, arg_name = None, feature_type=CawsFeatureType.CON
     import sys
     return ArgFuncFeature(sys.getsizeof, arg_no, arg_name, feature_type)
 
-def LenFeature(arg_no = 0, arg_name = None, feature_type=CawsFeatureType.CONTINUOUS):
+def ArgLenFeature(arg_no = 0, arg_name = None, feature_type=CawsFeatureType.CONTINUOUS):
     return ArgFuncFeature(len, arg_no, arg_name, feature_type)
