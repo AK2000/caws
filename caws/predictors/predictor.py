@@ -61,25 +61,26 @@ class EndpointModel:
         tasks["block_id"] = tasks[["run_id", "block_id"]].apply(lambda r: f"{r.run_id}.{r.block_id}", axis=1)
         
         df_split = split(resources)
-        df_split_clean = defaultdict(list)
+        df_split_clean = defaultdict(dict)
         for i in range(len(df_split)):
             df_new = df_split[i][["timestamp", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles", "perf_instructions_retired", "perf_llc_misses"]].diff()
             df_new["timestamp"] = (df_new["timestamp"] / np.timedelta64(1, "s"))
             df_new = df_new.div(df_new["timestamp"], axis='index')
             df_new["cpu_freq_rel"] = (df_new["perf_unhalted_core_cycles"] + .000001) / (df_new["perf_unhalted_reference_cycles"] + .000001) 
             df_new["pid"] = df_split[i]["pid"]
+            df_new["ppid"] = df_split[i]["psutil_process_ppid"]
             df_new["timestamp"] = df_split[i]["timestamp"]
             df_new = df_new.set_index("timestamp")
             df_new = df_new.dropna() # Drop first row of diff
             if len(df_new) > 0:
-                df_split_clean[df_split[i]["block_id"].iloc[0]].append(df_new)
+                df_split_clean[df_split[i]["block_id"].iloc[0]][df_new["pid"].iloc[0]] = df_new
 
         process_preds = {}
         for block_id in df_split_clean.keys():
             df_split_clean[block_id] = sorted(df_split_clean[block_id], key=lambda x: x.index[-1] - x.index[0], reverse=True)
-            df = df_split_clean[block_id][0]
-            for i in range(1, len(df_split_clean[block_id])):
-                df = sum_resources(df, df_split_clean[block_id][i])
+            df = None 
+            for process_df in df_split_clean[block_id].values():
+                df = sum_resources(df, process_df)
 
             # TODO: Should I combine blocks/runs to create regression?
             df_combined = pd.merge_asof(energy[energy["block_id"] == block_id], df, on="timestamp", direction="backward")
@@ -94,7 +95,12 @@ class EndpointModel:
             else:
                 self.static_power = (self.alpha * self.static_power) + ((1-self.alpha) * regr.intercept_)
 
-            for i in range(len(df_split_clean[block_id])):
+            for process_df in df_split_clean[block_id].values():
+                if process_df["ppid"].iloc[0] in df_split_clean[block_id]:
+                    ppid = process_df["ppid"].iloc[0]
+                    df_split_clean[block_id][ppid] = sum_resources(df_split_clean[block_id][ppid], process_df)
+
+            for worker_df in df_split_clean[block_id].values():
                 worker_df = df_split_clean[block_id][i]
                 pid = worker_df["pid"].iloc[0]
                 worker_df = pd.merge_asof(energy[energy["block_id"] == block_id], worker_df, on="timestamp", direction="backward").dropna()
