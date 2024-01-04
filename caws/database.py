@@ -32,7 +32,7 @@ class CawsDatabase:
     def __init__(self,
                  url: str,
                  ):
-        self.eng = sa.create_engine(url)
+        self.eng = sa.create_engine(url, pool_recycle=1800)
         self.meta = self.Base.metadata
 
         # TODO: this code wants a read lock on the sqlite3 database, and fails if it cannot

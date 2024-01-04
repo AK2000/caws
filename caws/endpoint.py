@@ -83,7 +83,7 @@ class Endpoint:
             try:
                 if self.monitor_url is None:
                     self.monitor_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
-                self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url)
+                self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url, pool_recycle=1800)
             except:
                 self.monitoring_avail = False
         else:

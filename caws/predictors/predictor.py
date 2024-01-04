@@ -195,7 +195,8 @@ class EndpointModel:
         return Prediction(y[0], y[1])
 
     def predict_cold_start(self):
-        cold_start_tasks = self.tasks[self.tasks["endpoint_status"] == "COLD"]
+        cold_start_tasks = self.tasks[self.tasks["endpoint_status"] == "COLD"].sort_values(by=["time_began"], ascending=False)
+        cold_start_tasks = cold_start_tasks[:5] # use only latest info
         if len(cold_start_tasks) == 0: # No information, or endpoint is always warm
             return 0
         total_time = (cold_start_tasks["time_completed"] - cold_start_tasks["time_began"]) / np.timedelta64(1, "s")
@@ -234,7 +235,7 @@ class Predictor:
             
 
     def start(self):
-        self.eng = sqlalchemy.create_engine(self.caws_database_url) #TODO: Better method for this?
+        self.eng = sqlalchemy.create_engine(self.caws_database_url, pool_recycle=1800) #TODO: Better method for this?
         self.Session = sessionmaker(bind=self.eng)
         with self.Session() as session:
             connection = session.connection()
