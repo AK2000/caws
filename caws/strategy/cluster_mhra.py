@@ -176,6 +176,10 @@ class ClusterMHRA(Strategy):
         if threshold is None:
             threshold = 0.25 * max([self.predictor.predict_static_power(e) * e.shutdown_time for e in self.endpoints])
         print(f"Threshold: {threshold}")
+        print(len(tasks_by_energy))
+
+        if len(tasks_by_energy) < 3:
+            return [tuple(t for _, t in tasks_by_energy)]
 
         task_embeddings += np.random.uniform(-1, 1, size=task_embeddings.shape)
         children, ncc, n_leaves, parents = ward_tree(task_embeddings)

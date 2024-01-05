@@ -105,6 +105,9 @@ class EndpointModel:
             for worker_df in df_split_clean[block_id].values():
                 pid = worker_df["pid"].iloc[0]
                 worker_df = pd.merge_asof(energy[energy["block_id"] == block_id], worker_df, on="timestamp", direction="backward").dropna()
+                if len(worker_df) == 0:
+                    continue
+
                 worker_df["pred_power"] = regr.predict(worker_df[self.perf_counters]) - regr.intercept_
 
                 worker_df = pd.merge_ordered(

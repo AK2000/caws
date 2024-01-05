@@ -1,7 +1,9 @@
 import json
 import tempfile
 import concurrent.futures
+from concurrent.futures import as_completed
 import time
+import datetime
 from tqdm import tqdm
 
 import click
@@ -201,7 +203,7 @@ def profile(endpoint_name,
     help="Initial dataset size",
 )
 @click.option(
-    "--batch", "-b",
+    "--batch_size", "-b",
     type=int,
     default=128,
     help="Number of simulations to run each round",
@@ -228,7 +230,7 @@ def run(strategy_name,
         config,
         search_space,
         initial,
-        batch,
+        batch_size,
         total,
         endpoints,
         result_path):
@@ -238,7 +240,7 @@ def run(strategy_name,
     search_space = pd.read_csv(search_space, delim_whitespace=True)
 
     if strategy_name in config_obj["endpoints"]:
-        endpoint = utils.load_endpoint(config_obj, endpoint_name)
+        endpoint = utils.load_endpoint(config_obj, strategy_name)
         endpoints = [endpoint,]
         predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
         strategy = FCFS_RoundRobin(endpoints, predictor)
@@ -257,7 +259,7 @@ def run(strategy_name,
         elif strategy_name == "mhra":
             strategy = MHRA(endpoints, predictor)
         elif strategy_name == "cluster_mhra":
-            strategy = ClusterMHRA(endpoints, predictor)
+            strategy = ClusterMHRA(endpoints, predictor, alpha=0.2)
 
     # if src_endpoint == None:
     #     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
@@ -267,8 +269,8 @@ def run(strategy_name,
                            caws_database_url=config_obj["caws_monitoring_db"],
                            predictor=predictor) as executor:
 
-        with tqdm(total=search_count) as prog_bar:
-            start_time = time.monotonic()
+        with tqdm(total=total) as prog_bar:
+            start_time = datetime.datetime.now()
             
             already_ran = set()
             train_data = []
@@ -294,7 +296,7 @@ def run(strategy_name,
                 if future.exception() is not None:
                     # If it failed, pick a new SMILES string at random and submit it    
                     smiles = search_space.sample(1).iloc[0]['smiles'] # pick one molecule
-                    new_future = executor.submit(compute_vertical_app, smiles) # launch a simulation in Parsl
+                    new_future = executor.submit(compute_vertical, smiles) # launch a simulation in Parsl
                     sim_futures.append(new_future) # store the Future so we can keep track of it
                 else:
                     # If it succeeded, store the result
@@ -303,24 +305,24 @@ def run(strategy_name,
                         'smiles': smiles,
                         'ie': future.result(),
                         'batch': 0,
-                        'time': monotonic() - start_time
+                        'time': (datetime.datetime.now() - start_time).total_seconds()
                     })
 
-                train_data = pd.DataFrame(train_data)
+            train_data = pd.DataFrame(train_data)
 
             # Loop until complete
             batch = 1
-            while len(train_data) < search_count:
+            while len(train_data) < total:
                 # Train and predict as show in the previous section.
                 train_future = executor.submit(train_model, train_data)
                 model = train_future.result()
-                inference_futures = [run_model(model, chunk) for chunk in np.array_split(search_space['smiles'], 64)]
-                predictions = combine_inferences(inputs=[f.result() for f in inference_futures]).result()
+                inference_futures = [executor.submit(run_model, model, chunk) for chunk in np.array_split(search_space['smiles'], 64)]
+                predictions = executor.submit(combine_inferences, inputs=[f.result() for f in inference_futures]).result()
                 
                 sim_futures = []
                 for smiles in predictions['smiles']:
                     if smiles not in already_ran:
-                        sim_futures.append(compute_vertical_app(smiles))
+                        sim_futures.append(executor.submit(compute_vertical, smiles))
                         already_ran.add(smiles)
                         if len(sim_futures) >= batch_size:
                             break
@@ -331,19 +333,19 @@ def run(strategy_name,
                     if future.exception() is None:
                         prog_bar.update(1)
                         new_results.append({
-                            'smiles': future.task_def['args'][0],
+                            'smiles': future.task_info.task_args[0],
                             'ie': future.result(),
                             'batch': batch, 
-                            'time': monotonic() - start_time
+                            'time': (datetime.datetime.now() - start_time).total_seconds()
                         })
                         
                 # Update the training data and repeat
                 batch += 1
                 train_data = pd.concat((train_data, pd.DataFrame(new_results)), ignore_index=True)
             
-            end_time = time.monotonic()
+            end_time = datetime.datetime.now()
 
-    runtime = (end_time - start_time)
+    runtime = (end_time - start_time).total_seconds()
     total_energy = 0
     for endpoint in endpoints:
         _, _, energy = endpoint.collect_monitoring_info(start_time)
