@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 from globus_compute_sdk import Executor
 
 import caws
-from utils import sleep
+from test.util_funcs import sleep
 
 def test_collection_funcx(endpoint_id):
     # Check to make sure we can collect monitoring data
@@ -15,7 +15,6 @@ def test_collection_funcx(endpoint_id):
     # but I think it's good to include here too
     with Executor(endpoint_id=endpoint_id, 
                   monitoring=True, 
-                  monitor_resources=True,
                   resource_monitoring_interval=1) as gce:
 
         future = gce.submit(sleep, 5)

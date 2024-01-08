@@ -8,17 +8,17 @@ from caws.features import CawsFeatureType, ArgFeature
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.predictors import Predictor
 
-import util_funcs
+import test.util_funcs
 
 def test_feature_basic():
-    gemm = caws_task(util_funcs.gemm, [ArgFeature(0)]) 
+    gemm = caws_task(test.util_funcs.gemm, [ArgFeature(0)]) 
     assert isinstance(gemm, CawsTask)
 
     features = gemm.extract_features(64)
     assert len(features) == 1
     assert features[0] == (64, CawsFeatureType.CONTINUOUS)
 
-    gemm = caws_task(util_funcs.gemm, [ArgFeature(arg_name="dim")])
+    gemm = caws_task(test.util_funcs.gemm, [ArgFeature(arg_name="dim")])
     features = gemm.extract_features(64)
     assert features[0] == (64, CawsFeatureType.CONTINUOUS)
 
@@ -34,7 +34,7 @@ def test_feature_send():
     dbm.start()
     assert dbm.started
 
-    task_info = CawsTaskInfo(util_funcs.add, (1, 2), {}, 0, util_funcs.add.__name__)
+    task_info = CawsTaskInfo(test.util_funcs.add, (1, 2), {}, 0, test.util_funcs.add.__name__)
     task_info.timing_info["submit"] = datetime.now()
     dbm.send_task_message(task_info)
     dbm.send_feature_message({

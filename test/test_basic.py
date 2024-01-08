@@ -5,7 +5,7 @@ import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.predictor import Predictor
 
-from util_funcs import * # Imports test functions
+from test.util_funcs import * # Imports test functions
 
 def test_one(endpoint_id):
     

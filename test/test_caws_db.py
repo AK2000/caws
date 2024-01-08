@@ -9,7 +9,7 @@ from caws.task import CawsTaskInfo
 from caws.predictors.predictors import Predictor
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
-from util_funcs import add, transfer_file
+from test.util_funcs import add, transfer_file
 
 def test_database_create():
     import sqlalchemy
