@@ -157,14 +157,7 @@ class CawsDatabase:
             PrimaryKeyConstraint('caws_task_id', 'feature_id'),
         )
 
-class Singleton(type):
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-class CawsDatabaseManager(metaclass=Singleton):
+class CawsDatabaseManager:
     def __init__(self,
                  db_url,
                  batching_interval : float = 1,

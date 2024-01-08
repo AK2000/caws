@@ -10,6 +10,7 @@ from caws.path import CawsPath
 
 from test.util_funcs import transfer_file
 
+@pytest.mark.skip(reason="Need specific configuration")
 def test_transfer_manager():
     source_name = "caws-dev_ep1"
     source_compute_id = "27c10959-3ae1-4ce9-a20d-466e7bba293c"
@@ -64,6 +65,7 @@ def test_transfer_manager():
     assert not transfer_manager.started
     assert transfer_record.status == TransferStatus.COMPLETED
 
+@pytest.mark.skip(reason="Need specific configuration")
 def test_transfer_executor():
     source_path = "test_transfer.txt"
     source_name = "caws-dev_ep1"

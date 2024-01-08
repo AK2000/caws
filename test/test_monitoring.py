@@ -60,6 +60,11 @@ def test_collection_endpoint(endpoint_id):
     endpoint = caws.Endpoint("caws-dev", 
                              endpoint_id,
                              monitoring_avail=True)
+    endpoints = [endpoint,]
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoints, "sqlite:///caws_tasks.db"))
+    with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_monitoring.db") as executor:
+        fut = executor.submit(transfer_file, caws_path)
+        assert fut.result()
 
     task_df, resource_df, energy_df = endpoint.collect_monitoring_info()
 

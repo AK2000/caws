@@ -9,7 +9,7 @@ from caws.database import CawsDatabaseManager
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
 from caws.transfer import TransferManager
-from util_funcs import gemm, loop
+from test.util_funcs import gemm, loop
 
 caws_database_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
 
@@ -141,6 +141,7 @@ def test_predictor_transfer():
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
 
+@pytest.mark.skip(reason="Not currently supporting this feature")
 def test_predictor_impute():
     iters = 2
 

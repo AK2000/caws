@@ -2,6 +2,7 @@ import pytest
 
 import caws
 
+@pytest.mark.skip(reason="Need key file")
 def test_carbon(endpoint_id):
     endpoint = caws.Endpoint("caws-dev", 
                              endpoint_id,

@@ -3,10 +3,12 @@ import time
 from datetime import datetime
 import json
 
+import pytest 
+
 import caws
 from caws.database import CawsDatabase, CawsDatabaseManager
 from caws.task import CawsTaskInfo
-from caws.predictors.predictors import Predictor
+from caws.predictors.predictor import Predictor
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
 from test.util_funcs import add, transfer_file
@@ -70,6 +72,7 @@ def test_database_manager():
         (c, ) = result.first()
         assert c == 1
 
+@pytest.mark.skip(reason="Need transfer information and allocations")
 def test_database_integration():
     import sqlalchemy
     from sqlalchemy import text
@@ -103,7 +106,7 @@ def test_database_integration():
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
     caws_path = CawsPath(source, file_path)
     endpoints = [destination, source]
-    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoitns, "sqlite:///caws_tasks.db"))
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoints, "sqlite:///caws_tasks.db"))
     with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_monitoring.db") as executor:
         fut = executor.submit(transfer_file, caws_path)
         assert fut.result()
