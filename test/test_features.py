@@ -6,7 +6,7 @@ from caws.database import CawsDatabaseManager
 from caws.task import caws_task, CawsTask, CawsTaskInfo
 from caws.features import CawsFeatureType, ArgFeature
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
+from caws.predictors.predictors import Predictor
 
 import test.util_funcs
 
@@ -75,8 +75,8 @@ def test_feature_integration(endpoint_id):
                              monitoring_avail=True)
 
     endpoints = [endpoint]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
-    add = caws_task(test.util_funcs.add, [ArgFeature(0)])
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoints, "sqlite:///caws_monitoring_2.db"))
+    add = caws_task(util_funcs.add, [ArgFeature(0)])
     with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_monitoring_2.db") as executor:
         fut = executor.submit(add, 1, 2)
         assert fut.result() == 3

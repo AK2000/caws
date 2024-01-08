@@ -18,6 +18,13 @@ from sqlalchemy.orm import declarative_base
 
 from caws.task import TaskStatus, CawsTaskInfo
 
+logger = logging.getLogger(__name__)
+os.makedirs("logs/", exist_ok=True) 
+ch = logging.FileHandler("logs/caws_database.log")
+ch.setFormatter(logging.Formatter(
+    "[DATABASE]  %(message)s", 'blue'))
+logger.addHandler(ch)
+
 class CawsDatabase:
 
     Base = declarative_base()
@@ -25,7 +32,7 @@ class CawsDatabase:
     def __init__(self,
                  url: str,
                  ):
-        self.eng = sa.create_engine(url)
+        self.eng = sa.create_engine(url, pool_recycle=1800)
         self.meta = self.Base.metadata
 
         # TODO: this code wants a read lock on the sqlite3 database, and fails if it cannot
@@ -141,7 +148,7 @@ class CawsDatabase:
 
     class TaskFeatures(Base):
         __tablename__ = "features"
-        caws_task_id = Column(Text, sa.ForeignKey('caws_task.caws_task_id'), nullable=False)
+        caws_task_id = Column(Text, nullable=False)
         feature_id = Column(Integer, nullable=False)
         feature_type = Column(Text, nullable=False)
         value = Column(Text, nullable=False)
@@ -160,8 +167,8 @@ class Singleton(type):
 class CawsDatabaseManager(metaclass=Singleton):
     def __init__(self,
                  db_url,
-                 batching_interval : float = 2,
-                 batching_threshold: int = 10):
+                 batching_interval : float = 1,
+                 batching_threshold: int = 999):
         self.db = CawsDatabase(db_url)
         self.started = False
         self.task_msg_queue = queue.Queue()
@@ -178,12 +185,12 @@ class CawsDatabaseManager(metaclass=Singleton):
         self._kill_event = threading.Event()
         self._pusher_thread = Thread(target=self._database_pushing_loop)
         self._pusher_thread.start()
-        print("Database pusher started")
+        logger.info("Database pusher started")
 
     def shutdown(self):
         if self.started:
+            logger.info("Joining database thread")
             self._kill_event.set()
-            print("Joining database thread")
             self._pusher_thread.join()
             self.started = False
 
@@ -208,7 +215,7 @@ class CawsDatabaseManager(metaclass=Singleton):
         self.task_msg_queue.put(msg)
 
     def send_transfer_message(self, transfer_info: dict[Any]):
-        self.transfer_msg_queue.put(transfer_info)
+        self.transfer_msg_queue.put(transfer_info.copy())
 
     def send_feature_message(self, feature_info: dict[Any]):
         self.feature_msg_queue.put(feature_info)
@@ -232,8 +239,11 @@ class CawsDatabaseManager(metaclass=Singleton):
                        "time_scheduled", "time_began", "time_completed", "caws_task_id"]
         transfer_update_cols = ["transfer_id", "transfer_status", "time_completed", "bytes_transferred", "files_transferred", "sync_level"]
 
-        while not self._kill_event.is_set():
+        while (not self._kill_event.is_set() or
+                self.task_msg_queue.qsize() != 0 or self.transfer_msg_queue.qsize() != 0 or
+                self.feature_msg_queue.qsize() != 0):
             task_messages = self._get_messages_in_batch(self.task_msg_queue)
+            logger.debug(f"Sending {len(task_messages)} task messages to database")
             insert_messages = []
             update_messages = []
             for x in task_messages:
@@ -248,6 +258,7 @@ class CawsDatabaseManager(metaclass=Singleton):
                 self.db.update(table="caws_task", columns=task_update_cols, messages=update_messages)
 
             transfer_messages = self._get_messages_in_batch(self.transfer_msg_queue)
+            logger.debug(f"Sending {len(transfer_messages)} transfer messages to database")
             insert_messages = []
             update_messages = []
             for x in transfer_messages:
@@ -263,5 +274,6 @@ class CawsDatabaseManager(metaclass=Singleton):
 
             
             feature_messages = self._get_messages_in_batch(self.feature_msg_queue)
+            logger.debug(f"Sending {len(feature_messages)} feature messages to database")
             if len(feature_messages) > 0:
                 self.db.insert(table="features", messages=feature_messages)

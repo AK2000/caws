@@ -62,6 +62,7 @@ class Endpoint:
                  max_blocks=1,
                  parallelism=0.5,
                  shutdown_time=10,
+                 perf_counters = ["perf_instructions_retired", "perf_llc_misses"],
                  tz_offset=0):
                  
         self.name = name
@@ -82,7 +83,7 @@ class Endpoint:
             try:
                 if self.monitor_url is None:
                     self.monitor_url = os.environ["ENDPOINT_MONITOR_DEFAULT"]
-                self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url)
+                self.monitoring_engine = sqlalchemy.create_engine(self.monitor_url, pool_recycle=1800)
             except:
                 self.monitoring_avail = False
         else:
@@ -94,8 +95,6 @@ class Endpoint:
         self.scheduled_tasks = set()
         self.running_tasks = set()
 
-        # Fetch state and status
-        self.poll()
         self.metadata = client.get_endpoint_metadata(self.compute_endpoint_id)
 
         self.gce = Executor(endpoint_id=self.compute_endpoint_id,
@@ -123,6 +122,8 @@ class Endpoint:
         self.min_blocks = min_blocks
         self.max_blocks = max_blocks
         self.parallelism = parallelism
+        self.shutdown_time = shutdown_time
+        self.perf_counters = perf_counters
 
         self.active_slots = self.slots_per_block * self.min_blocks
         self.active_tasks = 0
@@ -131,9 +132,11 @@ class Endpoint:
             self.state = EndpointState.WARM
         else:
             self.state = EndpointState.COLD
-        
-        self.start_time = datetime.datetime.now()
+
         self.time_offset = tz_offset
+        
+        self.poll()
+        self.start_time = datetime.datetime.now()
 
     def collect_monitoring_info(self, prev_timestamp = None):
         if not self.monitoring_avail:
@@ -155,13 +158,15 @@ class Endpoint:
                 )
             )).all())
             task_run_ids_or = [mdb.Try.run_id == run_id[0] for run_id in run_ids]
-            task_df = pd.read_sql(select(mdb.Try).where(and_(or_(*task_run_ids_or), mdb.Try.task_try_time_launched > prev_timestamp)), conn)
+            task_df = pd.read_sql(select(mdb.Try).where(and_(or_(*task_run_ids_or), mdb.Try.task_try_time_returned > prev_timestamp)), conn)
+            task_df.dropna(subset=["task_try_time_returned"]) # Only include completed tasks
 
             end_times = pd.read_sql(select(mdb.Status).where(and_(mdb.Status.task_status_name == "running_ended", mdb.Status.timestamp > prev_timestamp)), conn)
             task_df = pd.merge(task_df, end_times[["task_id", "timestamp"]], on="task_id")
             task_df = task_df.rename(columns={"timestamp": "task_try_time_running_ended"})
             task_df["task_try_time_running"] = pd.to_datetime(task_df["task_try_time_running"]) - pd.Timedelta(self.time_offset, "h")
             task_df["task_try_time_running_ended"] = pd.to_datetime(task_df["task_try_time_running_ended"]) - pd.Timedelta(self.time_offset, "h")
+            task_df["task_try_time_returned"] = pd.to_datetime(task_df["task_try_time_returned"]) - pd.Timedelta(self.time_offset, "h")
 
             prev_timestamp = prev_timestamp - datetime.timedelta(seconds=1)
             resource_run_ids_or = [mdb.Resource.run_id == run_id[0] for run_id in run_ids]
@@ -234,10 +239,12 @@ class Endpoint:
 
         if status["status"] != "online":
             self.state = EndpointState.DEAD
+            return self.state
         elif len(status["details"]["active_managers"]) > 0 and self.state != EndpointState.WARM:
             self.state = EndpointState.WARM
         elif len(status["details"]["active_managers"]) == 0 and self.state != EndpointState.WARMING:
             self.state = EndpointState.COLD
 
+        self.active_slots = len(status["details"]["active_managers"]) * self.slots_per_block
         return self.state
 

@@ -11,7 +11,7 @@
     "transfer_models": [
         {
             "src": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
-            "dest": "9032dd3a-e841-4687-a163-2720da731b5b",
+            "dest": "3caddd4a-bb35-4c3d-9101-d9a0ad7f3a30",
             "num_hops": 19
         },
         {
@@ -31,7 +31,7 @@
         },
         {
             "src": "12906d72-48e0-11ee-8135-15041d20ea55",
-            "dest": "9032dd3a-e841-4687-a163-2720da731b5b",
+            "dest": "3caddd4a-bb35-4c3d-9101-d9a0ad7f3a30",
             "num_hops": 14
         },
         {

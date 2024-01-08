@@ -6,8 +6,8 @@ import json
 import caws
 from caws.database import CawsDatabase, CawsDatabaseManager
 from caws.task import CawsTaskInfo
+from caws.predictors.predictors import Predictor
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.path import CawsPath
 from test.util_funcs import add, transfer_file
 
@@ -103,7 +103,7 @@ def test_database_integration():
     file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "test_data", "hello_world.txt")
     caws_path = CawsPath(source, file_path)
     endpoints = [destination, source]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, Predictor(endpoitns, "sqlite:///caws_tasks.db"))
     with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_monitoring.db") as executor:
         fut = executor.submit(transfer_file, caws_path)
         assert fut.result()

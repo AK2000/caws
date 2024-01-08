@@ -2,13 +2,14 @@ import json
 import tempfile
 import concurrent.futures
 import time
+from tqdm import tqdm
 
 import click
 import numpy as np
 
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
-from caws.predictors.transfer_predictors import TransferPredictor
+from caws.predictors.predictor import Predictor
 
 from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
@@ -69,19 +70,25 @@ def benchmark(benchmark_name,
 
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
-    with caws.CawsExecutor(endpoints, strategy, caws_database_url=config_obj["caws_monitoring_db"]) as executor:
+    predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
+    strategy = FCFS_RoundRobin(endpoints, predictor)
+    with caws.CawsExecutor(endpoints,
+                           strategy,
+                           caws_database_url=config_obj["caws_monitoring_db"],
+                           predictor=predictor) as executor:
         if warmup:
+            print("Warming up endoint")
             fut = executor.submit(time.sleep, 5)
             fut.result()
         
         futures = []
+        print("Submitting tasks")
         for _ in range(ntasks):
             futures.append(executor.submit(benchmark.func, *args, **kwargs))
-        concurrent.futures.wait(futures)
 
-        for future in futures:
+        for future in tqdm(futures):
             future.result()
+    print("Completed!")
 
 @cli.command()
 @click.argument("endpoint_name", type=str)
@@ -148,22 +155,31 @@ def profile(endpoint_name,
         args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
         benchmark.func.mainify()
         benchmarks.append((benchmark.func, args, kwargs))
-        print("Running benchmark:", benchmark_name)
+        print("Setting Up Benchmark:", benchmark_name)
 
     task_range = np.logspace(0, np.log2(max_tasks), num=int(np.log2(max_tasks))+1, base=2, dtype='int', endpoint=True)
     print("Task Range: ", task_range)
     
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
-    with caws.CawsExecutor(endpoints, strategy, caws_database_url=config_obj["caws_monitoring_db"]) as executor:
-        for func, args, kwargs in benchmarks:
+    predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
+    strategy = FCFS_RoundRobin(endpoints, predictor)
+    with caws.CawsExecutor(endpoints, 
+                           strategy,
+                           caws_database_url=config_obj["caws_monitoring_db"],
+                           predictor=predictor) as executor:
+        for i, (func, args, kwargs) in enumerate(benchmarks):
             print(f"Starting benchmark: {func.func.__name__}")
             if warmup:
+                if i != 0:
+                    print("Rate limiting to start on new node.")
+                    time.sleep(60) # Rate limit so each benchmark is on a new node
+                print("Warming up endpoint!")
                 fut = executor.submit(time.sleep, 5)
                 fut.result()
             
-            for ntasks in task_range:
+            print("Submitting tasks")
+            for ntasks in tqdm(task_range):
                 # Ensure all tasks are batched together
                 futures = []
                 with executor.scheduling_lock:
@@ -174,7 +190,10 @@ def profile(endpoint_name,
                 for future in futures:
                     future.result() # Raise any exceptions
 
-            time.sleep(60) # Rate limit so each new benchmark is a new node
+                if (i+1) < len(benchmarks):
+                    predictor.update()
+
+        print("Completed!")
 
 if __name__ == "__main__":
     cli()

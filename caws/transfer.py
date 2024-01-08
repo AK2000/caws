@@ -22,7 +22,8 @@ from globus_sdk.tokenstorage import SimpleJSONFileAdapter
 from caws.database import CawsDatabaseManager
 
 logger = logging.getLogger(__name__)
-ch = logging.StreamHandler()
+os.makedirs("logs/", exist_ok=True) 
+ch = logging.FileHandler("logs/caws_transfer.log")
 ch.setFormatter(logging.Formatter(
     "[TRANSFER]  %(message)s", 'red'))
 logger.addHandler(ch)
@@ -162,7 +163,11 @@ class TransferManager(object):
                     dest_path = src_path.get_dest_local_path(dst, task_id)
                     dir_name = os.path.dirname(dest_path)
                     os.makedirs(dir_name, exist_ok=True)
-                    shutil.copy2(src_path.get_src_local_path(),  dest_path)
+                    if os.path.isfile(src_path.get_src_local_path()):
+                        shutil.copy2(src_path.get_src_local_path(),  dest_path)
+                    else:
+                        shutil.copytree(src_path.get_src_local_path(), dest_path)
+
                 continue
 
             logger.info(f'Transferring {src_name} to {dst_name}: {files}')
@@ -222,8 +227,7 @@ class TransferManager(object):
                     task_record.status = TransferStatus.FAILED
                 continue
 
-            
-            self.active_transfers[res['task_id']] = {
+            transfer_info= {
                 'name': f"{self._round} {i}/{n}",
                 'transfer_id': res["task_id"],
                 'src_endpoint_id': src_endpoint_id,
@@ -232,15 +236,14 @@ class TransferManager(object):
                 'time_submit': datetime.now(),
                 'task_records': task_records
             }
-            logger.debug(f"Submited Transfer to Globus, task id: {res['task_id']}")
+            if self.caws_db:
+                self.caws_db.send_transfer_message(transfer_info)
+            self.active_transfers[res['task_id']] = transfer_info
 
+            logger.debug(f"Submited Transfer to Globus, task id: {res['task_id']}")
             for task_record in task_records:
                 task_record.transfer_ids.append(res['task_id'])
-
-            all_task_records.extend(task_records)
-
-            if self.caws_db:
-                self.caws_db.send_transfer_message(self.active_transfers[res['task_id']])
+            all_task_records.extend(task_records)            
 
         for task_record in all_task_records:
             # Ensures extactly once semantics for callback

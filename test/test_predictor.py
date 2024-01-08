@@ -5,7 +5,6 @@ import concurrent.futures
 import caws
 from caws import CawsTaskInfo
 from caws.predictors.predictor import Predictor, Prediction
-from caws.predictors.transfer_predictors import TransferPredictor
 from caws.database import CawsDatabaseManager
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.path import CawsPath
@@ -48,7 +47,7 @@ def test_predictor_update():
     endpoints = [endpoint]
 
     predictor = Predictor([endpoint,], caws_database_url)
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     with caws.CawsExecutor(endpoints, strategy, predictor=predictor) as executor:
         fut = executor.submit(add, 1, 2)
         assert fut.result() == 3
@@ -69,7 +68,7 @@ def test_predictor_features():
     endpoints = [endpoint]
 
     predictor = Predictor([endpoint,], caws_database_url)
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     with caws.CawsExecutor(endpoints, strategy, predictor=predictor) as executor:
         fut = executor.submit(add, 1, 2)
         assert fut.result() == 3
@@ -138,7 +137,7 @@ def test_predictor_transfer():
     dbm.shutdown()
 
     predictor.update()
-    result = predictor.predict_transfer(source, destination, caws_path.size, 1)
+    result = predictor.predict_transfer(source.transfer_endpoint_id, destination.transfer_endpoint_id, caws_path.size, 1)
     assert not math.isnan(result.runtime)
     assert not math.isnan(result.energy)
 
@@ -158,7 +157,7 @@ def test_predictor_impute():
 
     endpoints = [desktop, theta]
     predictor = Predictor(endpoints, caws_database_url)
-    strategy = FCFS_RoundRobin(endpoints, TransferPredictor(endpoints))
+    strategy = FCFS_RoundRobin(endpoints, predictor)
     with caws.CawsExecutor(endpoints, strategy, predictor=predictor) as executor:
         futures = []
         # Submit task to both endpoints
@@ -166,7 +165,7 @@ def test_predictor_impute():
             futures.append(executor.submit(gemm, 128))
         concurrent.futures.wait(futures)
 
-    strategy = FCFS_RoundRobin(endpoints[:1], TransferPredictor(endpoints[:1]))
+    strategy = FCFS_RoundRobin(endpoints[:1], predictor)
     with caws.CawsExecutor(endpoints[:1], strategy, predictor=predictor) as executor:
         futures = []
         for i in range(iters):

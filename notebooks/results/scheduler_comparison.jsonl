@@ -1,0 +1,7 @@
+{"runtime": 640.486623, "energy": 33461179354.0, "strategy": "desktop", "alpha": null, "ntasks": 256}
+{"runtime": 656.365008, "energy": 103082000000.0, "strategy": "theta", "alpha": null, "ntasks": 256}
+{"runtime": 340.468985, "energy": 79277870901.0, "strategy": "midway", "alpha": null, "ntasks": 256}
+{"runtime": 1280.136596, "energy": 47349339967.0, "strategy": "mhra", "alpha": 0.5, "ntasks": 256}
+{"runtime": 323.059683, "energy": 90631397241.0, "strategy": "round_robin", "alpha": null, "ntasks": 256}
+{"runtime": 447.848011, "energy": 42523440059.0, "strategy": "cluster_mhra (alpha=0.5)", "alpha": 0.5, "ntasks": 256}
+{"runtime": 308.187234, "energy": 60094725703.0, "strategy": "cluster_mhra (alpha=0)", "alpha": 0, "ntasks": 256}

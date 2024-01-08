@@ -1,0 +1,6 @@
+{"runtime": 202.336184, "energy": 68140204163.0, "strategy": "cluster_mhra", "alpha": 0, "ntasks": 256}
+{"runtime": 175.449167, "energy": 54511924476.0, "strategy": "cluster_mhra", "alpha": 0.2, "ntasks": 256}
+{"runtime": 402.392759, "energy": 43187012689.0, "strategy": "cluster_mhra", "alpha": 0.4, "ntasks": 256}
+{"runtime": 402.359674, "energy": 42244682595.0, "strategy": "cluster_mhra", "alpha": 0.6, "ntasks": 256}
+{"runtime": 651.538187, "energy": 33470477609.0, "strategy": "cluster_mhra", "alpha": 0.8, "ntasks": 256}
+{"runtime": 677.484184, "energy": 34593052128.0, "strategy": "cluster_mhra", "alpha": 1.0, "ntasks": 256}
