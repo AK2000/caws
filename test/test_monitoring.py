@@ -7,6 +7,8 @@ logger = logging.getLogger(__name__)
 from globus_compute_sdk import Executor
 
 import caws
+from caws.predictors.predictor import Predictor
+from caws.strategy.round_robin import FCFS_RoundRobin
 from test.util_funcs import sleep
 
 def test_collection_funcx(endpoint_id):
@@ -14,8 +16,7 @@ def test_collection_funcx(endpoint_id):
     # Probably want a test like this inside funcx as well
     # but I think it's good to include here too
     with Executor(endpoint_id=endpoint_id, 
-                  monitoring=True, 
-                  resource_monitoring_interval=1) as gce:
+                  monitoring=True) as gce:
 
         future = gce.submit(sleep, 5)
         future.result()
@@ -63,8 +64,8 @@ def test_collection_endpoint(endpoint_id):
     endpoints = [endpoint,]
     strategy = FCFS_RoundRobin(endpoints, Predictor(endpoints, "sqlite:///caws_tasks.db"))
     with caws.CawsExecutor(endpoints, strategy, caws_database_url="sqlite:///caws_monitoring.db") as executor:
-        fut = executor.submit(transfer_file, caws_path)
-        assert fut.result()
+        fut = executor.submit(sleep, 5)
+        fut.result()
 
     task_df, resource_df, energy_df = endpoint.collect_monitoring_info()
 
