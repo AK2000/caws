@@ -2,6 +2,8 @@ import os
 import math
 import concurrent.futures
 
+import pytest
+
 import caws
 from caws import CawsTaskInfo
 from caws.predictors.predictor import Predictor, Prediction

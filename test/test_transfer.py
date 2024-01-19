@@ -2,6 +2,8 @@ import logging
 import time
 import os
 
+import pytest
+
 import caws
 from caws.strategy.round_robin import FCFS_RoundRobin
 from caws.predictors.predictor import Predictor
