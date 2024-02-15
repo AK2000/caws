@@ -195,7 +195,7 @@ def compare(config,
     strategy = MHRA(endpoints, predictor, alpha=0.5)
     results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
     results["strategy"] = "mhra"
-    results["alpha"] = 0.5
+    results["alpha"] = 0.2
     results["ntasks"] = ntasks
     with open(result_path, "a") as fp:
         fp.write(json.dumps(results))
@@ -209,7 +209,7 @@ def compare(config,
     strategy = ClusterMHRA(endpoints, predictor, alpha=0.5)
     results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
     results["strategy"] = "cluster_mhra"
-    results["alpha"] = 0.5
+    results["alpha"] = 0.2
     results["ntasks"] = ntasks
     with open(result_path, "a") as fp:
         fp.write(json.dumps(results))
@@ -279,6 +279,11 @@ def compare(config,
     help="Benchmarks to include."
 )
 @click.option(
+    "--mock", "-m",
+    is_flag=True,
+    help="Run the scheduler without executing tasks"
+)
+@click.option(
     "--result_path", "-r",
     type=str,
     default="scheduler_eval.jsonl",
@@ -290,6 +295,7 @@ def sensitivity(config,
                 ntasks,
                 exclude,
                 include,
+                mock,
                 result_path):
 
     config_obj = json.load(open(config, "r"))
@@ -323,6 +329,9 @@ def sensitivity(config,
 
     alphas = [1.0, .9, .8, .7, .6, .5, .4, .3, .2, .1, 0]
 
+    if mock:
+        run_one = shadow_run
+
     for alpha in alphas:
         strategy = ClusterMHRA(endpoints, predictor, alpha=alpha)
         results = run_one(endpoints, strategy, predictor, benchmarks, ntasks, monitoring_url)
@@ -333,8 +342,9 @@ def sensitivity(config,
             fp.write(json.dumps(results))
             fp.write("\n")
 
-        print("Rate limiting to ensure endpoints are cold.")
-        time.sleep(60)
+        if not mock:
+            print("Rate limiting to ensure endpoints are cold.")
+            time.sleep(60)
 
 if __name__ == "__main__":
     cli()
