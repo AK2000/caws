@@ -3,6 +3,7 @@ import tempfile
 import concurrent.futures
 import time
 from tqdm import tqdm
+import os
 
 import click
 import numpy as np
@@ -13,6 +14,12 @@ from caws.predictors.predictor import Predictor
 
 from caws_experiments.benchmarks import utils as benchmark_utils
 from caws_experiments import utils
+from caws.path import CawsPath
+
+def warmup_task(test_path):
+    import time
+    time.sleep(10)
+
 
 @click.group()
 def cli():
@@ -66,7 +73,8 @@ def benchmark(benchmark_name,
     benchmark = benchmark_utils.import_benchmark(benchmark_name)
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
-    benchmark.func.mainify()
+    if benchmark_name != "molecular_dynamics":
+        benchmark.func.mainify()
 
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
@@ -78,7 +86,7 @@ def benchmark(benchmark_name,
                            predictor=predictor) as executor:
         if warmup:
             print("Warming up endoint")
-            fut = executor.submit(time.sleep, 5)
+            fut = executor.submit(time.sleep, 15)
             fut.result()
         
         futures = []
@@ -111,7 +119,7 @@ def benchmark(benchmark_name,
     help="Location of data directory for benchmarks",
 )
 @click.option(
-    "--max_tasks", "-m",
+    "--ntasks", "-n",
     type=int,
     default=1,
     help="Number of each task to run",
@@ -135,7 +143,7 @@ def profile(endpoint_name,
             config,
             benchmark_input_size,
             data_dir,
-            max_tasks,
+            ntasks,
             warmup,
             include,
             exclude):
@@ -143,7 +151,7 @@ def profile(endpoint_name,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matmul"]
+        benchmark_names = ["bfs", "compression", "dna", "mst", "pagerank", "thumbnail", "video", "matmul", "cholesky", "molecular_dynamics"]
     
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     benchmarks = []
@@ -153,13 +161,11 @@ def profile(endpoint_name,
         
         benchmark = benchmark_utils.import_benchmark(benchmark_name)
         args, kwargs = benchmark.generate_inputs(src_endpoint, benchmark_input_size, data_dir=data_dir)
-        benchmark.func.mainify()
+        if benchmark_name != "molecular_dynamics":
+            benchmark.func.mainify()
         benchmarks.append((benchmark.func, args, kwargs))
         print("Setting Up Benchmark:", benchmark_name)
 
-    task_range = np.logspace(0, np.log2(max_tasks), num=int(np.log2(max_tasks))+1, base=2, dtype='int', endpoint=True)
-    print("Task Range: ", task_range)
-    
     endpoint = utils.load_endpoint(config_obj, endpoint_name)
     endpoints = [endpoint,]
     predictor = Predictor(endpoints, config_obj["caws_monitoring_db"])
@@ -168,30 +174,27 @@ def profile(endpoint_name,
                            strategy,
                            caws_database_url=config_obj["caws_monitoring_db"],
                            predictor=predictor) as executor:
+        if warmup:
+            # Warm up endpoint
+            # Include transfer to handle globus permissions early
+            warmmup_file = os.path.join(data_dir, "README.md")
+            warmup_path = CawsPath(src_endpoint, warmmup_file, isolate=True)
+            fut = executor.submit(warmup_task, warmup_path)
+            fut.result()
+
         for i, (func, args, kwargs) in enumerate(benchmarks):
             print(f"Starting benchmark: {func.func.__name__}")
-            if warmup:
-                if i != 0:
-                    print("Rate limiting to start on new node.")
-                    time.sleep(60) # Rate limit so each benchmark is on a new node
-                print("Warming up endpoint!")
-                fut = executor.submit(time.sleep, 5)
-                fut.result()
+            futures = []
+            with executor.scheduling_lock:
+                for _ in range(ntasks):
+                    futures.append(executor.submit(func, *args, **kwargs))
             
-            print("Submitting tasks")
-            for ntasks in tqdm(task_range):
-                # Ensure all tasks are batched together
-                futures = []
-                with executor.scheduling_lock:
-                    for _ in range(ntasks):
-                        futures.append(executor.submit(func, *args, **kwargs))
-                
-                concurrent.futures.wait(futures)
-                for future in futures:
-                    future.result() # Raise any exceptions
+            concurrent.futures.wait(futures)
+            for future in futures:
+                future.result() # Raise any exceptions
 
-                if (i+1) < len(benchmarks):
-                    predictor.update()
+            if (i+1) < len(benchmarks):
+                predictor.update()
 
         print("Completed!")
 
