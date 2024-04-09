@@ -121,24 +121,37 @@ class EndpointModel:
 
                 worker_df = worker_df.set_index("timestamp")
                 worker_df["pred_power"] = worker_df["pred_power"].interpolate(method="time")
-                worker_df = worker_df.dropna(subset=["pred_power"])
-                worker_df["energy"] = integrate.cumtrapz(worker_df["pred_power"], x=worker_df.index.astype(np.int64) / 10**9, initial=0)
-                worker_df = worker_df[["energy"]]
+                worker_df["perf_llc_misses"] = worker_df["perf_llc_misses"].interpolate(method="time")
+                worker_df["perf_instructions_retired"] = worker_df["perf_instructions_retired"].interpolate(method="time")
+                worker_df["perf_unhalted_core_cycles"] = worker_df["perf_unhalted_core_cycles"].interpolate(method="time")
+                worker_df["perf_unhalted_reference_cycles"] = worker_df["perf_unhalted_reference_cycles"].interpolate(method="time")
+                worker_df = worker_df.dropna(subset=["pred_power", "perf_llc_misses", "perf_instructions_retired", "perf_unhalted_core_cycles", "perf_unhalted_reference_cycles"])
 
+                worker_df["energy"] = integrate.cumtrapz(worker_df["pred_power"], x=worker_df.index.astype(np.int64) / 10**9, initial=0)
+                worker_df["llc_misses"] = integrate.cumtrapz(worker_df["perf_llc_misses"], x=worker_df.index.astype(np.int64)/10**9, initial=0)
+                worker_df["instructions_retired"] = integrate.cumtrapz(worker_df["perf_instructions_retired"], x=worker_df.index.astype(np.int64)/10**9, initial=0)
+                worker_df["core_cycles"] = integrate.cumtrapz(worker_df["perf_unhalted_core_cycles"], x=worker_df.index.astype(np.int64)/10**9, initial=0)
+                worker_df["ref_cycles"] = integrate.cumtrapz(worker_df["perf_unhalted_reference_cycles"], x=worker_df.index.astype(np.int64)/10**9, initial=0)
+
+                worker_df = worker_df[["energy", "llc_misses", "instructions_retired", "core_cycles", "ref_cycles"]]
                 process_preds[(block_id, pid)] = worker_df
 
         tasks["task_try_time_running"] = pd.to_datetime(tasks['task_try_time_running'])
         tasks["task_try_time_running_ended"] = pd.to_datetime(tasks['task_try_time_running_ended'])
         tasks["running_duration"] = (tasks["task_try_time_running_ended"] - tasks["task_try_time_running"]) / np.timedelta64(1, 's')
 
-        def calc_energy(row):
+        def calc_interp_value(row, col):
             try:
-                return process_preds[(row.block_id, row.pid)].loc[row.task_try_time_running_ended, "energy"]- process_preds[(row.block_id, row.pid)].loc[row.task_try_time_running, "energy"]
-            except:
+                return process_preds[(row.block_id, row.pid)].loc[row.task_try_time_running_ended, col]-process_preds[(row.block_id, row.pid)].loc[row.task_try_time_running, col]
+            except Exception as e:
                 return None
-        tasks["energy_consumed"]  = tasks.apply(calc_energy, axis=1)
 
-        tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed"]]
+        tasks["energy_consumed"] = tasks.apply(lambda row : calc_interp_value(row, "energy"), axis=1)
+        tasks["llc_misses"] = tasks.apply(lambda row : calc_interp_value(row, "llc_misses"), axis=1)
+        tasks["instructions_retired"] = tasks.apply(lambda row : calc_interp_value(row, "instructions_retired"), axis=1)
+        tasks["core_cycles"] = tasks.apply(lambda row : calc_interp_value(row, "core_cycles"), axis=1)
+        tasks["ref_cycles"] = tasks.apply(lambda row : calc_interp_value(row, "ref_cycles"), axis=1)
+        tasks = tasks[["task_id", "task_try_time_running", "running_duration", "energy_consumed", "llc_misses", "instructions_retired", "core_cycles", "ref_cycles"]]
         caws_df = caws_df[["caws_task_id", "funcx_task_id", "func_name", "time_began", "time_completed"]]
 
         tasks = pd.merge(tasks, caws_df, left_on="task_id", right_on="funcx_task_id", how="left")
@@ -306,7 +319,7 @@ class Predictor:
             tasks = tasks.dropna(subset=["caws_task_id"]) #TODO: Fix clock synchronization
             
             with self.Session() as session:
-                values = tasks[["caws_task_id", "energy_consumed", "running_duration"]].to_dict('records')
+                values = tasks[["caws_task_id", "energy_consumed", "running_duration", "llc_misses", "instructions_retired", "core_cycles", "ref_cycles"]].to_dict('records')
                 session.execute(update(CawsDatabase.CawsTask), values)
                 session.commit()
                 session.execute(update(CawsDatabase.CawsEndpoint), [{"endpoint_id": endpoint.compute_endpoint_id, "static_power": static_power, "energy_consumed": energy_consumed}])

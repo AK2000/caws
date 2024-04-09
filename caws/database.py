@@ -125,6 +125,10 @@ class CawsDatabase:
         time_completed = Column(DateTime, nullable=True)
         running_duration = Column(Float, nullable=True)
         energy_consumed = Column(Float, nullable=True)
+        llc_misses = Column(Float, nullable=True)
+        instructions_retired = Column(Float, nullable=True)
+        core_cycles = Column(Float, nullable=True)
+        ref_cycles = Column(Float, nullable=True)
 
     class CawsEndpoint(Base):
         __tablename__ = "caws_endpoint"
