@@ -1,0 +1,27 @@
+{
+    "endpoints": {
+        "midway": {
+            "compute_id": "ef86d1de-d421-4423-9c6f-09acbfabf5b6",
+            "transfer_id": "2fde89c0-6fb4-11eb-8c47-0eb1aa8d4337",
+            "endpoint_path": "/scratch/midway3/alokvk2/"
+        },
+        "theta": {
+            "compute_id": "14d17201-7380-4af8-b4e0-192cb9805274",
+            "transfer_id": "9032dd3a-e841-4687-a163-2720da731b5b",
+            "endpoint_path": "/alokvk2",
+            "local_path": "/home/alokvk2"
+        },
+        "laptop": {
+            "compute_id": "27c10959-3ae1-4ce9-a20d-466e7bba293c",
+            "transfer_id": "02ca3fe4-0dee-11ee-bdcc-a3018385fcef",
+            "endpoint_path": "/D/UChicago/src/research",
+            "local_path": "/mnt/d/UChicago/src/research"
+        },
+        "desktop": {
+            "compute_id": "6754af96-7afa-4c81-b7ef-cf54587f02fa",
+            "transfer_id": "12906d72-48e0-11ee-8135-15041d20ea55"
+        }
+    },
+    "caws_monitoring_db": "postgresql://<user>:<password>@<address>/<database>",
+    "host": "desktop"
+}

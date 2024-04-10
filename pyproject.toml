@@ -15,6 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
+    "globus-sdk",
     "globus-compute-sdk @ git+https://github.com/AK2000/funcX@power_monitoring_new#subdirectory=compute_sdk",
     "psycopg2",
     "sqlalchemy",

@@ -1,0 +1,5 @@
+{"strategy": "desktop", "runtime": 2178.759556, "total_energy": 102895431045.0}
+{"strategy": "midway", "runtime": 6170.177913, "total_energy": 338896342383.0}
+{"strategy": "faster", "runtime": 233.560479, "total_energy": 62430015227.0}
+{"strategy": "mhra", "runtime": 2145.950496, "total_energy": 103174256625.0}
+{"strategy": "cluster_mhra", "runtime": 143.046703, "total_energy": 53746596661.0}
