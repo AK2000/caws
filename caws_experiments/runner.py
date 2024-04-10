@@ -143,7 +143,7 @@ def profile(endpoint_name,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video", "matmul"]
+        benchmark_names = ["bfs", "compression", "dna", "mst", "pagerank", "thumbnail", "video", "matmul"]
     
     src_endpoint = utils.load_endpoint(config_obj, config_obj["host"])
     benchmarks = []

@@ -175,7 +175,7 @@ def compare(config,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video"]
+        benchmark_names = ["bfs", "compression", "dna", "mst", "pagerank", "thumbnail", "video"]
     benchmark_names = [b for b in benchmark_names if b not in exclude]
     benchmarks = []
     for benchmark_name in benchmark_names:
@@ -314,7 +314,7 @@ def sensitivity(config,
     if len(include) > 0:
         benchmark_names = include
     else:
-        benchmark_names = ["bfs", "compression", "dna", "inference", "mst", "pagerank", "thumbnail", "video"]
+        benchmark_names = ["bfs", "compression", "dna", "mst", "pagerank", "thumbnail", "video"]
     benchmark_names = [b for b in benchmark_names if b not in exclude]
     benchmarks = []
     for benchmark_name in benchmark_names:
