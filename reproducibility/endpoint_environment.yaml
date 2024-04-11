@@ -15,7 +15,7 @@ dependencies:
       - python-igraph==0.10.8
       - rdkit==2023.9.3
       - scikit-learn==1.3.1
-      - scipy==1.11.
+      - scipy==1.11.2
       - squiggle==0.3.1
       - globus-compute-endpoint @ git+https://github.com/AK2000/funcX@power_monitoring_new#subdirectory=compute_endpoint,
       - -e chemfunctions @ git+https://github.com/AK2000/molecular-design-parsl-demo.git

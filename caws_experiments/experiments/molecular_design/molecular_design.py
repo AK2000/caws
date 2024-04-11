@@ -356,5 +356,75 @@ def run(strategy_name,
         fp.write(json.dumps(results))
         fp.write("\n")
 
+@cli.command()
+@click.option(
+    "--config",
+    required=True,
+    type=click.Path(readable=True),
+    help="Location of experiment config.",
+)
+@click.option(
+    "--search_space", "-s",
+    type=str,
+    default="experiments/molecular_design/QM9-search.tsv",
+    help="File containing total search space",
+)
+@click.option(
+    "--initial", "-i",
+    type=int,
+    default=256,
+    help="Initial dataset size",
+)
+@click.option(
+    "--batch_size", "-b",
+    type=int,
+    default=128,
+    help="Number of simulations to run each round",
+)
+@click.option(
+    "--total", "-t",
+    type=int,
+    default=1024,
+    help="Total molecules to evaluate",
+)
+@click.option(
+    "--endpoints", "-l",
+    required=False,
+    multiple=True,
+    help="Endpoint to use. Default (all)"
+)
+@click.option(
+    "--result_path", "-r",
+    type=str,
+    default="molecular_design_eval.jsonl",
+    help="Place to store results file"
+)
+def run_all(ctx, config, search_space, initial, batch_size, total, endpoints, result_path):
+    config_obj = json.load(open(config, "r"))
+    endpoint_names = endpoints if len(endpoints) > 0 else config_obj["endpoints"].keys()
+
+    # Run the application on each endpoint
+    for strategy_name in endpoint_names:
+        ctx.invoke(run, 
+                   strategy=strategy_name, 
+                   search_space=search_space,
+                   initial=initial,
+                   batch_size=batch_size,
+                   total=total,
+                   endpoints=endpoints,
+                   result_path=result_path)
+        
+    # Run the strategies
+    strategies = ["round_robin", "mhra", "cluster_mhra"]
+    for strategy_name in strategies:
+        ctx.invoke(run, 
+                   strategy=strategy_name, 
+                   search_space=search_space,
+                   initial=initial,
+                   batch_size=batch_size,
+                   total=total,
+                   endpoints=endpoints,
+                   result_path=result_path)
+
 if __name__ == "__main__":
     cli()
