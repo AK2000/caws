@@ -286,7 +286,7 @@ def compare(config,
 @click.option(
     "--result_path", "-r",
     type=str,
-    default="scheduler_eval.jsonl",
+    default="scheduler_sensitivity.jsonl",
     help="Place to store results file"
 )
 def sensitivity(config,
