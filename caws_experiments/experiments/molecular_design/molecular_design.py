@@ -366,7 +366,7 @@ def run(strategy_name,
 @click.option(
     "--search_space", "-s",
     type=str,
-    default="experiments/molecular_design/QM9-search.tsv",
+    default="caws_experiments/molecular_design/QM9-search.tsv",
     help="File containing total search space",
 )
 @click.option(
@@ -399,6 +399,7 @@ def run(strategy_name,
     default="molecular_design_eval.jsonl",
     help="Place to store results file"
 )
+@click.pass_context
 def run_all(ctx, config, search_space, initial, batch_size, total, endpoints, result_path):
     config_obj = json.load(open(config, "r"))
     endpoint_names = endpoints if len(endpoints) > 0 else config_obj["endpoints"].keys()
@@ -406,7 +407,8 @@ def run_all(ctx, config, search_space, initial, batch_size, total, endpoints, re
     # Run the application on each endpoint
     for strategy_name in endpoint_names:
         ctx.invoke(run, 
-                   strategy=strategy_name, 
+                   strategy_name=strategy_name,
+                   config=config,
                    search_space=search_space,
                    initial=initial,
                    batch_size=batch_size,
@@ -418,7 +420,8 @@ def run_all(ctx, config, search_space, initial, batch_size, total, endpoints, re
     strategies = ["round_robin", "mhra", "cluster_mhra"]
     for strategy_name in strategies:
         ctx.invoke(run, 
-                   strategy=strategy_name, 
+                   strategy_name=strategy_name,
+                   config=config,
                    search_space=search_space,
                    initial=initial,
                    batch_size=batch_size,
